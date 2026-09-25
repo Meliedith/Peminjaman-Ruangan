@@ -1,0 +1,56 @@
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #f8f9fa;
+}
+
+.card {
+    border: none;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+}
+
+.table th {
+    font-weight: 600;
+}
+
+.status-pending {
+    color: #856404;
+    background-color: #fff3cd;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.875em;
+}
+.status-approved {
+    color: #155724;
+    background-color: #d4edda;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.875em;
+}
+.status-rejected, .status-expired {
+    color: #721c24;
+    background-color: #f8d7da;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.875em;
+}
+.status-completed {
+    color: #0c5460;
+    background-color: #d1ecf1;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.875em;
+}
+
+.slot-kosong { background-color: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; }
+.slot-pending { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+.slot-terisi { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+
+/* Micro-animations */
+.btn {
+    transition: transform 0.1s ease-in-out, box-shadow 0.1s ease-in-out;
+}
+.btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
