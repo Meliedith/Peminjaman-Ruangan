@@ -6,8 +6,8 @@ require_once __DIR__ . '/../includes/auth_middleware.php';
 
 checkAuth('user');
 
-// Fetch active tools
-$stmt = $pdo->query("SELECT id, name, total_stock FROM tools WHERE is_active = 1");
+// Fetch active tools and only show available/good ones
+$stmt = $pdo->query("SELECT id, name, total_stock FROM tools WHERE is_active = 1 AND total_stock > 0 AND kondisi = 'Baik'");
 $tools = $stmt->fetchAll();
 
 $slots = getTimeSlots(); // from functions.php

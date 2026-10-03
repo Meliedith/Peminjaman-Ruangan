@@ -60,6 +60,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['type'])) {
             $stmt->execute([$id]);
             setFlashMessage('warning', 'Alat tidak bisa dihapus permanen karena ada histori peminjaman. Status diubah menjadi non-aktif.');
         }
+    } elseif ($action === 'toggle_active') {
+        $id = $_POST['id'] ?? '';
+        $is_active = (int)($_POST['is_active'] ?? 0);
+        $stmt = $pdo->prepare("UPDATE tools SET is_active = ? WHERE id = ?");
+        $stmt->execute([$is_active, $id]);
+        echo json_encode(['success' => true]);
+        exit;
+    } elseif ($action === 'activate_all') {
+        $pdo->exec("UPDATE tools SET is_active = 1");
+        setFlashMessage('success', 'Semua alat berhasil diaktifkan.');
+        redirect('/admin/master_data.php');
+    } elseif ($action === 'deactivate_all') {
+        $pdo->exec("UPDATE tools SET is_active = 0");
+        setFlashMessage('success', 'Semua alat berhasil dinonaktifkan.');
+        redirect('/admin/master_data.php');
     } elseif ($action === 'export') {
         $stmt = $pdo->query("SELECT kode, name, jenis, lokasi, total_stock, kondisi, is_active FROM tools ORDER BY name ASC");
         $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -328,6 +343,19 @@ require_once __DIR__ . '/../includes/header.php';
         </div>
     </form>
     
+    <div class="d-flex mb-3 gap-2">
+        <form method="POST" action="" onsubmit="return confirm('Yakin ingin mengaktifkan semua alat?');">
+            <input type="hidden" name="type" value="tool">
+            <input type="hidden" name="action" value="activate_all">
+            <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check-circle"></i> Aktifkan Semua</button>
+        </form>
+        <form method="POST" action="" onsubmit="return confirm('Yakin ingin menonaktifkan semua alat?');">
+            <input type="hidden" name="type" value="tool">
+            <input type="hidden" name="action" value="deactivate_all">
+            <button type="submit" class="btn btn-sm btn-secondary"><i class="bi bi-x-circle"></i> Nonaktifkan Semua</button>
+        </form>
+    </div>
+
     <div class="table-responsive">
         <table class="table table-hover align-middle">
             <thead class="table-light">
@@ -390,11 +418,10 @@ require_once __DIR__ . '/../includes/header.php';
                             <?php endif; ?>
                         </td>
                         <td>
-                            <?php if($t['is_active']): ?>
-                                <span class="badge bg-success">Tersedia</span>
-                            <?php else: ?>
-                                <span class="badge bg-secondary">Tidak Tersedia</span>
-                            <?php endif; ?>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input toggle-active" type="checkbox" data-id="<?= $t['id'] ?>" <?= $t['is_active'] ? 'checked' : '' ?>>
+                                <label class="form-check-label"><?= $t['is_active'] ? 'Aktif' : 'Non-Aktif' ?></label>
+                            </div>
                         </td>
                         <td>
                             <button type="button" class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#editToolModal<?= $t['id'] ?>">Edit</button>
@@ -733,4 +760,37 @@ function editItem(type, id, currentName) {
         }
     }
 }
+
+document.querySelectorAll('.toggle-active').forEach(item => {
+    item.addEventListener('change', function() {
+        const id = this.getAttribute('data-id');
+        const isActive = this.checked ? 1 : 0;
+        const label = this.nextElementSibling;
+        
+        label.textContent = isActive ? 'Aktif' : 'Non-Aktif';
+        
+        const formData = new FormData();
+        formData.append('type', 'tool');
+        formData.append('action', 'toggle_active');
+        formData.append('id', id);
+        formData.append('is_active', isActive);
+        
+        fetch('', {
+            method: 'POST',
+            body: formData
+        }).then(res => res.json())
+          .then(data => {
+              if(!data.success) {
+                  alert('Gagal mengubah status');
+                  this.checked = !isActive;
+                  label.textContent = this.checked ? 'Aktif' : 'Non-Aktif';
+              }
+          })
+          .catch(err => {
+              alert('Terjadi kesalahan koneksi');
+              this.checked = !isActive;
+              label.textContent = this.checked ? 'Aktif' : 'Non-Aktif';
+          });
+    });
+});
 </script>

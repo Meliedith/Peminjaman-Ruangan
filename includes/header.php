@@ -60,8 +60,7 @@ require_once __DIR__ . '/functions.php';
                         <a class="nav-link text-danger" href="<?= BASE_URL ?>/auth/logout.php">Logout (<?= htmlspecialchars($_SESSION['name']) ?>)</a>
                     </li>
                 <?php else: ?>
-                    <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/auth/login.php?role=user">Login User</a></li>
-                    <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/auth/login.php?role=admin">Login Admin</a></li>
+                    <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/auth/login.php">Login</a></li>
                 <?php endif; ?>
             </ul>
         </div>

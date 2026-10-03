@@ -9,5 +9,5 @@ if (isset($_SERVER['HTTP_X_FORWARDED_PROTO'])) {
     $protocol = $_SERVER['HTTP_X_FORWARDED_PROTO'] . '://';
 }
 $domainName = $_SERVER['HTTP_HOST'];
-define('BASE_URL', $protocol . $domainName . '/peminjaman ruangan');
+define('BASE_URL', $protocol . $domainName . '/Peminjaman_Ruangan');
 ?>

@@ -13,66 +13,90 @@ if (isset($_SESSION['user_id'])) {
     }
 }
 
-$role = isset($_GET['role']) && $_GET['role'] === 'admin' ? 'admin' : 'user';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['credential'])) {
+    $jwt = $_POST['credential'];
+    $url = 'https://oauth2.googleapis.com/tokeninfo?id_token=' . $jwt;
+    $response = @file_get_contents($url);
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = trim($_POST['email'] ?? '');
-    $password = $_POST['password'] ?? '';
-    $login_role = $_POST['role'] ?? 'user';
+    if ($response !== false) {
+        $payload = json_decode($response, true);
+        if (isset($payload['email'])) {
+            $email = $payload['email'];
+            $name = $payload['name'] ?? 'User';
 
-    if (empty($email) || empty($password)) {
-        setFlashMessage('danger', 'Email dan password wajib diisi.');
-    } else {
-        $stmt = $pdo->prepare("SELECT id, name, password, role FROM users WHERE email = ? AND role = ?");
-        $stmt->execute([$email, $login_role]);
-        $user = $stmt->fetch();
+            // Check in DB
+            $stmt = $pdo->prepare("SELECT id, name, role FROM users WHERE email = ?");
+            $stmt->execute([$email]);
+            $user = $stmt->fetch();
 
-        if ($user && password_verify($password, $user['password'])) {
-            $_SESSION['user_id'] = $user['id'];
-            $_SESSION['name'] = $user['name'];
-            $_SESSION['role'] = $user['role'];
-            
-            if ($user['role'] === 'admin') {
+            if ($user) {
+                // Login existing user
+                $_SESSION['user_id'] = $user['id'];
+                $_SESSION['name'] = $user['name'];
+                $_SESSION['role'] = $user['role'];
+            } else {
+                // Auto register as user if not found in db
+                $stmt = $pdo->prepare("INSERT INTO users (name, email, role, password) VALUES (?, ?, 'user', '')");
+                $stmt->execute([$name, $email]);
+
+                $_SESSION['user_id'] = $pdo->lastInsertId();
+                $_SESSION['name'] = $name;
+                $_SESSION['role'] = 'user';
+            }
+
+            if ($_SESSION['role'] === 'admin') {
                 redirect('/admin/dashboard.php');
             } else {
                 redirect('/user/dashboard.php');
             }
         } else {
-            setFlashMessage('danger', 'Email atau password salah, atau role tidak sesuai.');
+            setFlashMessage('danger', 'Gagal memverifikasi login Google. Email tidak ditemukan.');
         }
+    } else {
+        setFlashMessage('danger', 'Gagal menghubungi server Google.');
     }
 }
 
 require_once __DIR__ . '/../includes/header.php';
 ?>
 
-<div class="row justify-content-center mt-4">
+<div class="row justify-content-center mt-5">
     <div class="col-md-5">
-        <div class="card shadow-sm p-4">
-            <h3 class="text-center mb-4">Login <?= ucfirst($role) ?></h3>
-            <form method="POST" action="">
-                <input type="hidden" name="role" value="<?= htmlspecialchars($role) ?>">
-                
-                <div class="mb-3">
-                    <label class="form-label">Email address</label>
-                    <input type="email" name="email" class="form-control" required autofocus>
-                </div>
-                
-                <div class="mb-4">
-                    <label class="form-label">Password</label>
-                    <input type="password" name="password" class="form-control" required>
-                </div>
-                
-                <button type="submit" class="btn btn-primary w-100">Login</button>
-            </form>
-            
-            <?php if ($role === 'user'): ?>
-            <div class="text-center mt-3">
-                <p>Belum punya akun? <a href="<?= BASE_URL ?>/auth/register.php">Daftar di sini</a></p>
+        <div class="card shadow-sm p-5 border-0" style="border-radius: 12px;">
+            <div class="text-center mb-4">
+                <img src="<?= BASE_URL ?>/assets/images/logo_unika.png" alt="Logo Unika" height="60" class="mb-3">
+                <h3 class="fw-bold" style="color: #0b5b9e;">Login SSO</h3>
+                <p class="text-muted">Gunakan akun Google Anda untuk masuk</p>
             </div>
-            <?php endif; ?>
+
+            <div class="d-flex justify-content-center mb-3">
+                <div id="g_id_onload"
+                    data-client_id="870441525376-opon2s5buo26ernbmod9qh9l7esq9b1a.apps.googleusercontent.com"
+                    data-context="signin" data-ux_mode="popup" data-callback="handleCredentialResponse"
+                    data-auto_prompt="false">
+                </div>
+
+                <div class="g_id_signin" data-type="standard" data-shape="rectangular" data-theme="outline"
+                    data-text="sign_in_with" data-size="large" data-logo_alignment="left">
+                </div>
+            </div>
+
+            <form id="gsi_form" method="POST" action="">
+                <input type="hidden" name="credential" id="credential">
+            </form>
+
         </div>
     </div>
 </div>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+    function handleCredentialResponse(response) {
+        if (response.credential) {
+            document.getElementById('credential').value = response.credential;
+            document.getElementById('gsi_form').submit();
+        }
+    }
+</script>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
