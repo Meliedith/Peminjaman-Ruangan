@@ -71,7 +71,7 @@ require_once __DIR__ . '/../includes/header.php';
 
             <div class="d-flex justify-content-center mb-3">
                 <div id="g_id_onload"
-                    data-client_id="870441525376-opon2s5buo26ernbmod9qh9l7esq9b1a.apps.googleusercontent.com"
+                    data-client_id="<?= GOOGLE_CLIENT_ID ?>"
                     data-context="signin" data-ux_mode="popup" data-callback="handleCredentialResponse"
                     data-auto_prompt="false">
                 </div>
