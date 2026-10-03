@@ -85,7 +85,7 @@ require_once __DIR__ . '/../includes/header.php';
                 
                 <div class="mb-3">
                     <label class="form-label">Tanggal</label>
-                    <input type="date" name="booking_date" class="form-control" required 
+                    <input type="date" name="booking_date" class="form-control" required onclick="this.showPicker()"
                            min="<?= date('Y-m-d') ?>" max="<?= date('Y-m-d', strtotime('+30 days')) ?>">
                 </div>
 

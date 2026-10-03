@@ -65,8 +65,8 @@ require_once __DIR__ . '/../includes/header.php';
         <div class="card shadow-sm p-5 border-0" style="border-radius: 12px;">
             <div class="text-center mb-4">
                 <img src="<?= BASE_URL ?>/assets/images/logo_unika.png" alt="Logo Unika" height="60" class="mb-3">
-                <h3 class="fw-bold" style="color: #0b5b9e;">Login SSO</h3>
-                <p class="text-muted">Gunakan akun Google Anda untuk masuk</p>
+                <h3 class="fw-bold" style="color: #0b5b9e;">Login</h3>
+                <p class="text-muted">Gunakan akun student Anda untuk masuk.</p>
             </div>
 
             <div class="d-flex justify-content-center mb-3">

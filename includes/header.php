@@ -39,14 +39,14 @@ require_once __DIR__ . '/functions.php';
             <ul class="navbar-nav ms-auto">
                 <?php if (isset($_SESSION['user_id'])): ?>
                     <?php if ($_SESSION['role'] === 'admin'): ?>
-                        <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/admin/dashboard.php">Dashboard</a></li>
-                        <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/admin/kelola_ruangan.php">Ruangan</a></li>
-                        <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/admin/kelola_alat.php">Alat</a></li>
-                        <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/admin/pengembalian_alat.php">Pengembalian</a></li>
+                        <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/admin/dashboard.php">Dashboard</a></li>
+                        <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/admin/kelola_ruangan.php">Ruangan</a></li>
+                        <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/admin/kelola_alat.php">Alat</a></li>
+                        <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/admin/pengembalian_alat.php">Pengembalian</a></li>
                     <?php else: ?>
-                        <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/user/dashboard.php">Dashboard</a></li>
+                        <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/user/dashboard.php">Dashboard</a></li>
                         <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" id="pinjamDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <a class="nav-link text-white dropdown-toggle" href="#" id="pinjamDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                                 Form Peminjaman
                             </a>
                             <ul class="dropdown-menu" aria-labelledby="pinjamDropdown">
@@ -54,13 +54,13 @@ require_once __DIR__ . '/functions.php';
                                 <li><a class="dropdown-item" href="<?= BASE_URL ?>/user/pinjam_alat.php">Pinjam Alat Lab</a></li>
                             </ul>
                         </li>
-                        <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/user/riwayat.php">Riwayat</a></li>
+                        <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/user/riwayat.php">Riwayat</a></li>
                     <?php endif; ?>
                     <li class="nav-item">
                         <a class="nav-link text-danger" href="<?= BASE_URL ?>/auth/logout.php">Logout (<?= htmlspecialchars($_SESSION['name']) ?>)</a>
                     </li>
                 <?php else: ?>
-                    <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/auth/login.php">Login</a></li>
+                    <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/auth/login.php">Login</a></li>
                 <?php endif; ?>
             </ul>
         </div>
