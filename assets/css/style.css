@@ -9,6 +9,12 @@ body {
     box-shadow: 0 4px 6px rgba(0,0,0,0.05);
 }
 
+/* Pastikan navbar & dropdown menu selalu berada di atas konten halaman dan elemen sticky */
+.navbar {
+    position: relative;
+    z-index: 1040;
+}
+
 .table th {
     font-weight: 600;
 }
@@ -54,3 +60,72 @@ body {
     transform: translateY(-1px);
     box-shadow: 0 4px 6px rgba(0,0,0,0.1);
 }
+
+/* Tool thumbnail & small preview */
+img.tool-thumb,
+.tool-thumb {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
+    max-width: 44px !important;
+    max-height: 44px !important;
+    object-fit: cover !important;
+    border-radius: 6px !important;
+    border: 1px solid #dee2e6 !important;
+    background-color: #f8f9fa !important;
+    cursor: pointer !important;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    display: inline-block !important;
+}
+img.tool-thumb:hover,
+.tool-thumb:hover {
+    transform: scale(1.08) !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15) !important;
+}
+.tool-thumb-placeholder {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
+    max-width: 44px !important;
+    max-height: 44px !important;
+    border-radius: 6px !important;
+    background-color: #f1f3f5 !important;
+    border: 1px dashed #ced4da !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    color: #adb5bd !important;
+    font-size: 0.75rem !important;
+    font-weight: 500 !important;
+}
+/* Fixed small preview box (strictly small, will never expand to big photo size) */
+.tool-small-preview-box {
+    width: 140px !important;
+    height: 140px !important;
+    max-width: 140px !important;
+    max-height: 140px !important;
+    min-width: 140px !important;
+    min-height: 140px !important;
+    margin: 0 auto !important;
+    border-radius: 8px !important;
+    overflow: hidden !important;
+    background-color: #f8f9fa !important;
+    border: 1px solid #dee2e6 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex-shrink: 0 !important;
+}
+.tool-small-preview-box img {
+    width: 140px !important;
+    height: 140px !important;
+    max-width: 140px !important;
+    max-height: 140px !important;
+    min-width: 140px !important;
+    min-height: 140px !important;
+    object-fit: cover !important;
+    display: block !important;
+}
+

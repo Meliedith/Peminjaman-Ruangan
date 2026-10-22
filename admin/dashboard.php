@@ -33,11 +33,12 @@ $stmt_noshow = $pdo->prepare("
 ");
 $stmt_noshow->execute();
 
-// Fetch statistics
-$stmt1 = $pdo->query("SELECT COUNT(*) FROM room_bookings WHERE status = 'pending'");
+// Fetch statistics (1 pengajuan multi-meja = 1x transaksi)
+$stmt1 = $pdo->query("SELECT COUNT(DISTINCT user_id, booking_date, start_time, end_time, created_at) FROM room_bookings WHERE status = 'pending'");
 $pending_room_count = $stmt1->fetchColumn();
 
-$stmt2 = $pdo->query("SELECT COUNT(*) FROM tool_bookings WHERE status = 'pending'");
+// Hitung grup transaksi pengajuan pending (1 pengajuan multi-barang = 1x transaksi)
+$stmt2 = $pdo->query("SELECT COUNT(DISTINCT user_id, booking_date, start_time, end_time, created_at) FROM tool_bookings WHERE status = 'pending'");
 $pending_tool_count = $stmt2->fetchColumn();
 
 $stmt3 = $pdo->query("SELECT COUNT(*) FROM tool_bookings WHERE status = 'approved'");
@@ -75,8 +76,9 @@ require_once __DIR__ . '/../includes/header.php';
 </div>
 
 <div class="row mt-5">
-    <div class="col-12 text-center">
+    <div class="col-12 text-center d-flex justify-content-center flex-wrap gap-2">
         <a href="<?= BASE_URL ?>/admin/master_data.php" class="btn btn-outline-secondary">Kelola Master Data (Alat & Meja)</a>
+        <a href="<?= BASE_URL ?>/admin/kelola_user.php" class="btn btn-outline-primary">Kelola Pengguna & Role</a>
     </div>
 </div>
 

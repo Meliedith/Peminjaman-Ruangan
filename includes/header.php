@@ -17,11 +17,11 @@ require_once __DIR__ . '/functions.php';
     <!-- Google Fonts: Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- Custom CSS -->
-    <link href="<?= BASE_URL ?>/assets/css/style.css" rel="stylesheet">
+    <link href="<?= BASE_URL ?>/assets/css/style.css?v=<?= file_exists(__DIR__ . '/../assets/css/style.css') ? filemtime(__DIR__ . '/../assets/css/style.css') : time() ?>" rel="stylesheet">
 </head>
 <body>
 
-<nav class="navbar navbar-expand-lg navbar-dark mb-4" style="background-color: #0b5b9e;">
+<nav class="navbar navbar-expand-lg navbar-dark mb-4" style="background-color: #0b5b9e; position: relative; z-index: 1040;">
     <div class="container-fluid px-4">
         <a class="navbar-brand d-flex align-items-center flex-wrap" href="<?= BASE_URL ?>/">
             <!-- Mobile Logos -->
@@ -43,6 +43,7 @@ require_once __DIR__ . '/functions.php';
                         <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/admin/kelola_ruangan.php">Ruangan</a></li>
                         <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/admin/kelola_alat.php">Alat</a></li>
                         <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/admin/pengembalian_alat.php">Pengembalian</a></li>
+                        <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/admin/kelola_user.php">User</a></li>
                     <?php else: ?>
                         <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/user/dashboard.php">Dashboard</a></li>
                         <li class="nav-item dropdown">
@@ -56,8 +57,25 @@ require_once __DIR__ . '/functions.php';
                         </li>
                         <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/user/riwayat.php">Riwayat</a></li>
                     <?php endif; ?>
-                    <li class="nav-item">
-                        <a class="nav-link text-danger" href="<?= BASE_URL ?>/auth/logout.php">Logout (<?= htmlspecialchars($_SESSION['name']) ?>)</a>
+                    <li class="nav-item dropdown ms-lg-2">
+                        <a class="nav-link text-white dropdown-toggle d-flex align-items-center gap-2" href="#" id="userMenuDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <span class="badge bg-light text-primary rounded-circle px-2 py-1 fw-bold"><?= strtoupper(substr($_SESSION['name'] ?? 'U', 0, 1)) ?></span>
+                            <span><?= htmlspecialchars($_SESSION['name']) ?></span>
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end shadow border-0" aria-labelledby="userMenuDropdown">
+                            <li>
+                                <div class="px-3 py-2">
+                                    <div class="fw-bold text-dark text-truncate" style="max-width: 200px;"><?= htmlspecialchars($_SESSION['name']) ?></div>
+                                    <span class="badge <?= $_SESSION['role'] === 'admin' ? 'bg-warning text-dark' : 'bg-primary' ?> small">
+                                        <?= $_SESSION['role'] === 'admin' ? 'Administrator' : 'Mahasiswa' ?>
+                                    </span>
+                                </div>
+                            </li>
+                            <li><hr class="dropdown-divider my-1"></li>
+                            <li><a class="dropdown-item py-2" href="<?= BASE_URL ?>/profile.php">Profil Saya</a></li>
+                            <li><hr class="dropdown-divider my-1"></li>
+                            <li><a class="dropdown-item text-danger py-2" href="<?= BASE_URL ?>/auth/logout.php">Logout</a></li>
+                        </ul>
                     </li>
                 <?php else: ?>
                     <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/auth/login.php">Login</a></li>

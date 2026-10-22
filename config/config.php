@@ -1,15 +1,19 @@
 <?php
 // config/config.php
+date_default_timezone_set('Asia/Jakarta');
+
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
+$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443)) ? "https://" : "http://";
 if (isset($_SERVER['HTTP_X_FORWARDED_PROTO'])) {
     $protocol = $_SERVER['HTTP_X_FORWARDED_PROTO'] . '://';
 }
-$domainName = $_SERVER['HTTP_HOST'];
-define('BASE_URL', $protocol . $domainName . '/Peminjaman_Ruangan');
+$domainName = $_SERVER['HTTP_HOST'] ?? 'localhost';
+if (!defined('BASE_URL')) {
+    define('BASE_URL', $protocol . $domainName . '/Peminjaman_Ruangan');
+}
 
 // Load .env variables
 if (file_exists(__DIR__ . '/../.env')) {

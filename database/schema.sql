@@ -34,9 +34,13 @@ CREATE TABLE tables (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Seed 5 data awal (Meja 1-5)
+-- Seed 25 data meja (5 lingkaran x 5 meja)
 INSERT INTO tables (name) VALUES 
-('Meja 1'), ('Meja 2'), ('Meja 3'), ('Meja 4'), ('Meja 5');
+('Meja 1'), ('Meja 2'), ('Meja 3'), ('Meja 4'), ('Meja 5'),
+('Meja 6'), ('Meja 7'), ('Meja 8'), ('Meja 9'), ('Meja 10'),
+('Meja 11'), ('Meja 12'), ('Meja 13'), ('Meja 14'), ('Meja 15'),
+('Meja 16'), ('Meja 17'), ('Meja 18'), ('Meja 19'), ('Meja 20'),
+('Meja 21'), ('Meja 22'), ('Meja 23'), ('Meja 24'), ('Meja 25');
 
 
 -- 3. Table tools (Alat Lab)
@@ -49,7 +53,9 @@ CREATE TABLE tools (
     total_stock INT NOT NULL DEFAULT 0,
     available_stock INT NOT NULL DEFAULT 0,
     kondisi VARCHAR(50) NULL,
+    image VARCHAR(255) NULL,
     is_active TINYINT(1) DEFAULT 1,
+    deleted_at TIMESTAMP NULL DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );

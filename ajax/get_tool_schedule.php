@@ -16,7 +16,7 @@ if (empty($tool_id) || empty($date)) {
 }
 
 // Get total stock
-$stmt_tool = $pdo->prepare("SELECT total_stock FROM tools WHERE id = ?");
+$stmt_tool = $pdo->prepare("SELECT total_stock FROM tools WHERE id = ? AND deleted_at IS NULL");
 $stmt_tool->execute([$tool_id]);
 $tool = $stmt_tool->fetch();
 $total_stock = $tool ? (int)$tool['total_stock'] : 0;
@@ -43,9 +43,12 @@ foreach ($slots as $idx => $slot) {
 $stmt = $pdo->prepare("
     SELECT start_time, end_time, status, quantity 
     FROM tool_bookings 
-    WHERE tool_id = ? AND booking_date = ? AND status IN ('pending', 'approved')
+    WHERE tool_id = ? 
+    AND status IN ('pending', 'approved')
+    AND booking_date <= ? 
+    AND IFNULL(end_date, booking_date) >= ?
 ");
-$stmt->execute([$tool_id, $date]);
+$stmt->execute([$tool_id, $date, $date]);
 $bookings = $stmt->fetchAll();
 
 foreach ($bookings as $b) {
@@ -54,15 +57,15 @@ foreach ($bookings as $b) {
     $status = $b['status'];
     $qty = (int)$b['quantity'];
 
-    $in_range = false;
     foreach ($slots as $idx => $slot) {
         if ($idx >= count($slots) - 1) continue;
         
-        if ($slot === $start) {
-            $in_range = true;
-        }
+        $slot_start = $slot;
+        $slot_end = $slots[$idx+1];
         
-        if ($in_range) {
+        // Cek apakah booking ini beririsan dengan slot waktu ini
+        // (Booking mulai sebelum slot selesai, DAN booking selesai setelah slot dimulai)
+        if ($start < $slot_end && $end > $slot_start) {
             if ($status === 'pending') {
                 $schedule[$slot]['booked_pending'] += $qty;
             } else {
@@ -76,10 +79,6 @@ foreach ($bookings as $b) {
             } elseif ($schedule[$slot]['booked_pending'] > 0 || $schedule[$slot]['booked_approved'] > 0) {
                 $schedule[$slot]['color'] = 'bg-warning text-dark'; // Kuning jika sebagian dipinjam/pending
             }
-        }
-        
-        if ($slots[$idx+1] === $end) {
-            $in_range = false;
         }
     }
 }

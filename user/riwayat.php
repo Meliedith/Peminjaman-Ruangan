@@ -12,10 +12,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $type = $_POST['type'] ?? '';
     $id = $_POST['id'] ?? '';
     
-    if ($type === 'room') {
+    if ($type === 'room_group') {
+        $booking_date = $_POST['booking_date'] ?? '';
+        $created_at = $_POST['created_at'] ?? '';
+        $stmt = $pdo->prepare("UPDATE room_bookings SET status = 'cancelled' WHERE user_id = ? AND booking_date = ? AND created_at = ? AND status = 'pending'");
+        if ($stmt->execute([$user_id, $booking_date, $created_at]) && $stmt->rowCount() > 0) {
+            setFlashMessage('success', 'Pengajuan ruangan/meja berhasil dibatalkan.');
+        } else {
+            setFlashMessage('danger', 'Gagal membatalkan. Status mungkin sudah berubah.');
+        }
+    } elseif ($type === 'room') {
         $stmt = $pdo->prepare("UPDATE room_bookings SET status = 'cancelled' WHERE id = ? AND user_id = ? AND status = 'pending'");
         if ($stmt->execute([$id, $user_id]) && $stmt->rowCount() > 0) {
             setFlashMessage('success', 'Pengajuan ruangan berhasil dibatalkan.');
+        } else {
+            setFlashMessage('danger', 'Gagal membatalkan. Status mungkin sudah berubah.');
+        }
+    } elseif ($type === 'tool_group') {
+        $booking_date = $_POST['booking_date'] ?? '';
+        $created_at = $_POST['created_at'] ?? '';
+        $stmt = $pdo->prepare("UPDATE tool_bookings SET status = 'cancelled' WHERE user_id = ? AND booking_date = ? AND created_at = ? AND status = 'pending'");
+        if ($stmt->execute([$user_id, $booking_date, $created_at]) && $stmt->rowCount() > 0) {
+            setFlashMessage('success', 'Pengajuan alat berhasil dibatalkan.');
         } else {
             setFlashMessage('danger', 'Gagal membatalkan. Status mungkin sudah berubah.');
         }
@@ -27,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             setFlashMessage('danger', 'Gagal membatalkan. Status mungkin sudah berubah.');
         }
     }
-    redirect('/user/riwayat.php');
+    redirect('/user/riwayat.php?room_page=' . (int)($_GET['room_page'] ?? 1) . '&tool_page=' . (int)($_GET['tool_page'] ?? 1));
 }
 
 // Pagination configuration
@@ -38,41 +56,118 @@ $room_offset = ($room_page - 1) * $limit;
 $tool_page = isset($_GET['tool_page']) ? max(1, (int)$_GET['tool_page']) : 1;
 $tool_offset = ($tool_page - 1) * $limit;
 
-// Fetch Room Bookings Count
-$stmt_room_count = $pdo->prepare("SELECT COUNT(*) FROM room_bookings WHERE user_id = ?");
+// Fetch Room Bookings Group Count (1 pengajuan multi-meja = 1x transaksi)
+$stmt_room_count = $pdo->prepare("
+    SELECT COUNT(DISTINCT booking_date, start_time, end_time, created_at) 
+    FROM room_bookings 
+    WHERE user_id = ?
+");
 $stmt_room_count->execute([$user_id]);
-$room_total_records = $stmt_room_count->fetchColumn();
-$room_total_pages = ceil($room_total_records / $limit);
+$room_total_records = (int)$stmt_room_count->fetchColumn();
+$room_total_pages = max(1, ceil($room_total_records / $limit));
 
-// Fetch Room Bookings
-$stmt_room = $pdo->prepare("
-    SELECT rb.*, t.name as table_name 
-    FROM room_bookings rb 
-    JOIN tables t ON rb.table_id = t.id 
-    WHERE rb.user_id = ? 
-    ORDER BY rb.created_at DESC
+// Fetch Room Booking Groups for current page
+$stmt_room_groups = $pdo->prepare("
+    SELECT booking_date, start_time, end_time, created_at 
+    FROM room_bookings 
+    WHERE user_id = ? 
+    GROUP BY booking_date, start_time, end_time, created_at 
+    ORDER BY created_at DESC 
     LIMIT $limit OFFSET $room_offset
 ");
-$stmt_room->execute([$user_id]);
-$room_bookings = $stmt_room->fetchAll();
+$stmt_room_groups->execute([$user_id]);
+$room_page_groups = $stmt_room_groups->fetchAll(PDO::FETCH_ASSOC);
 
-// Fetch Tool Bookings Count
-$stmt_tool_count = $pdo->prepare("SELECT COUNT(*) FROM tool_bookings WHERE user_id = ?");
+$grouped_rooms = [];
+if (!empty($room_page_groups)) {
+    $created_ats = array_column($room_page_groups, 'created_at');
+    $placeholders = implode(',', array_fill(0, count($created_ats), '?'));
+
+    $stmt_items = $pdo->prepare("
+        SELECT rb.*, t.name as table_name 
+        FROM room_bookings rb 
+        JOIN tables t ON rb.table_id = t.id 
+        WHERE rb.user_id = ? AND rb.created_at IN ($placeholders)
+        ORDER BY rb.created_at DESC, CAST(SUBSTRING(t.name, 5) AS UNSIGNED) ASC
+    ");
+    $stmt_items->execute(array_merge([$user_id], $created_ats));
+    $all_room_items = $stmt_items->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($room_page_groups as $pg) {
+        $key = $pg['booking_date'] . '_' . $pg['start_time'] . '_' . $pg['end_time'] . '_' . $pg['created_at'];
+        $grouped_rooms[$key] = [
+            'booking_date' => $pg['booking_date'],
+            'start_time' => $pg['start_time'],
+            'end_time' => $pg['end_time'],
+            'created_at' => $pg['created_at'],
+            'items' => []
+        ];
+    }
+
+    foreach ($all_room_items as $item) {
+        $key = $item['booking_date'] . '_' . $item['start_time'] . '_' . $item['end_time'] . '_' . $item['created_at'];
+        if (isset($grouped_rooms[$key])) {
+            $grouped_rooms[$key]['items'][] = $item;
+        }
+    }
+}
+
+// Fetch Tool Bookings Group Count (1 pengajuan multi-barang = 1x transaksi)
+$stmt_tool_count = $pdo->prepare("
+    SELECT COUNT(DISTINCT booking_date, start_time, end_time, created_at) 
+    FROM tool_bookings 
+    WHERE user_id = ?
+");
 $stmt_tool_count->execute([$user_id]);
-$tool_total_records = $stmt_tool_count->fetchColumn();
-$tool_total_pages = ceil($tool_total_records / $limit);
+$tool_total_records = (int)$stmt_tool_count->fetchColumn();
+$tool_total_pages = max(1, ceil($tool_total_records / $limit));
 
-// Fetch Tool Bookings
-$stmt_tool = $pdo->prepare("
-    SELECT tb.*, t.name as tool_name 
-    FROM tool_bookings tb 
-    JOIN tools t ON tb.tool_id = t.id 
-    WHERE tb.user_id = ? 
-    ORDER BY tb.created_at DESC
+// Fetch Tool Booking Groups for current page
+$stmt_tool_groups = $pdo->prepare("
+    SELECT booking_date, end_date, start_time, end_time, created_at 
+    FROM tool_bookings 
+    WHERE user_id = ? 
+    GROUP BY booking_date, end_date, start_time, end_time, created_at 
+    ORDER BY created_at DESC 
     LIMIT $limit OFFSET $tool_offset
 ");
-$stmt_tool->execute([$user_id]);
-$tool_bookings = $stmt_tool->fetchAll();
+$stmt_tool_groups->execute([$user_id]);
+$page_groups = $stmt_tool_groups->fetchAll(PDO::FETCH_ASSOC);
+
+$grouped_tools = [];
+if (!empty($page_groups)) {
+    $created_ats = array_column($page_groups, 'created_at');
+    $placeholders = implode(',', array_fill(0, count($created_ats), '?'));
+    
+    $stmt_items = $pdo->prepare("
+        SELECT tb.*, t.name as tool_name 
+        FROM tool_bookings tb 
+        JOIN tools t ON tb.tool_id = t.id 
+        WHERE tb.user_id = ? AND tb.created_at IN ($placeholders)
+        ORDER BY tb.created_at DESC, t.name ASC
+    ");
+    $stmt_items->execute(array_merge([$user_id], $created_ats));
+    $all_items = $stmt_items->fetchAll(PDO::FETCH_ASSOC);
+    
+    foreach ($page_groups as $pg) {
+        $key = $pg['booking_date'] . '_' . $pg['start_time'] . '_' . $pg['end_time'] . '_' . $pg['created_at'];
+        $grouped_tools[$key] = [
+            'booking_date' => $pg['booking_date'],
+            'end_date' => $pg['end_date'],
+            'start_time' => $pg['start_time'],
+            'end_time' => $pg['end_time'],
+            'created_at' => $pg['created_at'],
+            'items' => []
+        ];
+    }
+    
+    foreach ($all_items as $item) {
+        $key = $item['booking_date'] . '_' . $item['start_time'] . '_' . $item['end_time'] . '_' . $item['created_at'];
+        if (isset($grouped_tools[$key])) {
+            $grouped_tools[$key]['items'][] = $item;
+        }
+    }
+}
 
 // Determine Active Tab based on query param
 $active_tab = isset($_GET['tool_page']) && !isset($_GET['room_page']) ? 'tool' : 'room';
@@ -100,39 +195,103 @@ require_once __DIR__ . '/../includes/header.php';
                     <table class="table table-hover align-middle">
                         <thead class="table-light">
                             <tr>
-                                <th>Tanggal Booking</th>
-                                <th>Meja</th>
-                                <th>Waktu</th>
-                                <th>Status</th>
-                                <th>Alasan (Jika Ditolak)</th>
-                                <th>Aksi</th>
+                                <th style="width: 140px;">Waktu Pengajuan</th>
+                                <th style="width: 180px;">Jadwal Peminjaman</th>
+                                <th>Rincian Meja & Status ACC</th>
+                                <th style="width: 160px;" class="text-center">Status Transaksi</th>
+                                <th style="width: 90px;" class="text-center">Aksi</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <?php if(count($room_bookings) === 0): ?>
-                                <tr><td colspan="6" class="text-center">Belum ada pengajuan ruangan.</td></tr>
+                            <?php if(count($grouped_rooms) === 0): ?>
+                                <tr><td colspan="5" class="text-center py-4 text-muted">Belum ada pengajuan ruangan/meja.</td></tr>
                             <?php else: ?>
-                                <?php foreach($room_bookings as $rb): ?>
+                                <?php foreach($grouped_rooms as $group): ?>
+                                    <?php 
+                                        $has_pending = false;
+                                        $statuses = [];
+                                        foreach($group['items'] as $it) {
+                                            $statuses[] = $it['status'];
+                                            if ($it['status'] === 'pending') $has_pending = true;
+                                        }
+                                        $unique_statuses = array_unique($statuses);
+                                        
+                                        // Summary status badge
+                                        if (count($unique_statuses) === 1) {
+                                            $single_status = $unique_statuses[0];
+                                            if ($single_status === 'pending') {
+                                                $overall_badge = '<span class="status-pending">Menunggu Persetujuan</span>';
+                                            } elseif ($single_status === 'approved') {
+                                                $overall_badge = '<span class="status-approved">Disetujui Semua</span>';
+                                            } elseif ($single_status === 'rejected') {
+                                                $overall_badge = '<span class="status-rejected">Ditolak Semua</span>';
+                                            } elseif ($single_status === 'cancelled') {
+                                                $overall_badge = '<span class="badge bg-secondary">Dibatalkan</span>';
+                                            } else {
+                                                $overall_badge = '<span class="badge bg-dark">' . ucfirst($single_status) . '</span>';
+                                            }
+                                        } else {
+                                            if (in_array('approved', $unique_statuses) && in_array('rejected', $unique_statuses) && !in_array('pending', $unique_statuses)) {
+                                                $overall_badge = '<span class="badge bg-primary">Disetujui Sebagian</span>';
+                                            } elseif (in_array('pending', $unique_statuses)) {
+                                                $overall_badge = '<span class="status-pending">Menunggu Review</span>';
+                                            } else {
+                                                $overall_badge = '<span class="badge bg-info text-dark">Campuran</span>';
+                                            }
+                                        }
+                                    ?>
                                     <tr>
-                                        <td><?= htmlspecialchars($rb['booking_date']) ?></td>
-                                        <td><?= htmlspecialchars($rb['table_name']) ?></td>
-                                        <td><?= htmlspecialchars($rb['start_time']) ?> - <?= htmlspecialchars($rb['end_time']) ?></td>
                                         <td>
-                                            <span class="status-<?= htmlspecialchars($rb['status']) ?>">
-                                                <?= ucfirst(htmlspecialchars($rb['status'])) ?>
-                                            </span>
+                                            <strong><?= date('d M Y', strtotime($group['created_at'])) ?></strong>
+                                            <div class="text-muted small"><?= date('H:i', strtotime($group['created_at'])) ?> WIB</div>
                                         </td>
-                                        <td><?= htmlspecialchars($rb['rejection_reason'] ?? '-') ?></td>
                                         <td>
-                                            <?php if($rb['status'] === 'pending'): ?>
-                                            <form method="POST" action="" class="d-inline" onsubmit="return confirm('Yakin ingin membatalkan pengajuan ini?');">
+                                            <div>
+                                                <strong><?= htmlspecialchars($group['booking_date']) ?></strong>
+                                            </div>
+                                            <div class="small mt-1">
+                                                <span class="text-secondary"><?= htmlspecialchars(substr($group['start_time'], 0, 5)) ?> - <?= htmlspecialchars(substr($group['end_time'], 0, 5)) ?> WIB</span>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="bg-light p-2 rounded border">
+                                                <table class="table table-sm table-borderless mb-0">
+                                                    <tbody>
+                                                        <?php foreach($group['items'] as $item): ?>
+                                                        <tr class="border-bottom border-light">
+                                                            <td class="py-1">
+                                                                <strong><?= htmlspecialchars($item['table_name']) ?></strong>
+                                                                <?php if(!empty($item['rejection_reason'])): ?>
+                                                                    <div class="text-danger small mt-1">
+                                                                        <em>Alasan Ditolak: <?= htmlspecialchars($item['rejection_reason']) ?></em>
+                                                                    </div>
+                                                                <?php endif; ?>
+                                                            </td>
+                                                            <td class="text-end py-1" style="width: 140px;">
+                                                                <span class="status-<?= htmlspecialchars($item['status']) ?>">
+                                                                    <?= ucfirst(htmlspecialchars($item['status'])) ?>
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                        <?php endforeach; ?>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </td>
+                                        <td class="text-center">
+                                            <?= $overall_badge ?>
+                                        </td>
+                                        <td class="text-center">
+                                            <?php if($has_pending): ?>
+                                            <form method="POST" action="" class="d-inline" onsubmit="return confirm('Yakin ingin membatalkan pengajuan ruangan ini?');">
                                                 <input type="hidden" name="action" value="cancel">
-                                                <input type="hidden" name="type" value="room">
-                                                <input type="hidden" name="id" value="<?= $rb['id'] ?>">
-                                                <button type="submit" class="btn btn-sm btn-outline-danger">Cancel</button>
+                                                <input type="hidden" name="type" value="room_group">
+                                                <input type="hidden" name="booking_date" value="<?= htmlspecialchars($group['booking_date']) ?>">
+                                                <input type="hidden" name="created_at" value="<?= htmlspecialchars($group['created_at']) ?>">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger">Batalkan</button>
                                             </form>
                                             <?php else: ?>
-                                                -
+                                                <span class="text-muted">-</span>
                                             <?php endif; ?>
                                         </td>
                                     </tr>
@@ -142,23 +301,9 @@ require_once __DIR__ . '/../includes/header.php';
                     </table>
                     
                     <?php if ($room_total_pages > 1): ?>
-                    <div class="d-flex justify-content-between align-items-center mt-3">
-                        <span class="text-muted small">Menampilkan <?= count($room_bookings) > 0 ? $room_offset + 1 : 0 ?> sampai <?= $room_offset + count($room_bookings) ?> dari <?= $room_total_records ?> entri</span>
-                        <nav>
-                            <ul class="pagination pagination-sm m-0">
-                                <li class="page-item <?= ($room_page <= 1) ? 'disabled' : '' ?>">
-                                    <a class="page-link" href="?room_page=<?= max(1, $room_page - 1) ?>&tool_page=<?= $tool_page ?>">Sebelumnya</a>
-                                </li>
-                                <?php for ($i = 1; $i <= $room_total_pages; $i++): ?>
-                                    <li class="page-item <?= ($i === $room_page) ? 'active' : '' ?>">
-                                        <a class="page-link" href="?room_page=<?= $i ?>&tool_page=<?= $tool_page ?>"><?= $i ?></a>
-                                    </li>
-                                <?php endfor; ?>
-                                <li class="page-item <?= ($room_page >= $room_total_pages) ? 'disabled' : '' ?>">
-                                    <a class="page-link" href="?room_page=<?= min($room_total_pages, $room_page + 1) ?>&tool_page=<?= $tool_page ?>">Selanjutnya</a>
-                                </li>
-                            </ul>
-                        </nav>
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
+                        <span class="text-muted small">Menampilkan <?= count($grouped_rooms) > 0 ? $room_offset + 1 : 0 ?> sampai <?= $room_offset + count($grouped_rooms) ?> dari <?= $room_total_records ?> transaksi</span>
+                        <?php renderPagination($room_page, $room_total_pages, ['tool_page' => $tool_page], 'room_page'); ?>
                     </div>
                     <?php endif; ?>
                 </div>
@@ -170,41 +315,113 @@ require_once __DIR__ . '/../includes/header.php';
                     <table class="table table-hover align-middle">
                         <thead class="table-light">
                             <tr>
-                                <th>Tanggal Booking</th>
-                                <th>Alat</th>
-                                <th>Jumlah</th>
-                                <th>Waktu</th>
-                                <th>Status</th>
-                                <th>Alasan (Jika Ditolak)</th>
-                                <th>Aksi</th>
+                                <th style="width: 140px;">Waktu Pengajuan</th>
+                                <th style="width: 180px;">Jadwal Peminjaman</th>
+                                <th>Rincian Barang & Status ACC</th>
+                                <th style="width: 160px;" class="text-center">Status Transaksi</th>
+                                <th style="width: 90px;" class="text-center">Aksi</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <?php if(count($tool_bookings) === 0): ?>
-                                <tr><td colspan="7" class="text-center">Belum ada pengajuan alat.</td></tr>
+                            <?php if(count($grouped_tools) === 0): ?>
+                                <tr><td colspan="5" class="text-center py-4 text-muted">Belum ada pengajuan alat.</td></tr>
                             <?php else: ?>
-                                <?php foreach($tool_bookings as $tb): ?>
+                                <?php foreach($grouped_tools as $group): ?>
+                                    <?php 
+                                        $has_pending = false;
+                                        $statuses = [];
+                                        foreach($group['items'] as $it) {
+                                            $statuses[] = $it['status'];
+                                            if ($it['status'] === 'pending') $has_pending = true;
+                                        }
+                                        $unique_statuses = array_unique($statuses);
+                                        
+                                        // Summary status badge
+                                        if (count($unique_statuses) === 1) {
+                                            $single_status = $unique_statuses[0];
+                                            if ($single_status === 'pending') {
+                                                $overall_badge = '<span class="status-pending">Menunggu Persetujuan</span>';
+                                            } elseif ($single_status === 'approved') {
+                                                $overall_badge = '<span class="status-approved">Disetujui Semua</span>';
+                                            } elseif ($single_status === 'rejected') {
+                                                $overall_badge = '<span class="status-rejected">Ditolak Semua</span>';
+                                            } elseif ($single_status === 'completed') {
+                                                $overall_badge = '<span class="status-completed">Selesai / Kembali</span>';
+                                            } elseif ($single_status === 'cancelled') {
+                                                $overall_badge = '<span class="badge bg-secondary">Dibatalkan</span>';
+                                            } else {
+                                                $overall_badge = '<span class="badge bg-dark">' . ucfirst($single_status) . '</span>';
+                                            }
+                                        } else {
+                                            if (in_array('approved', $unique_statuses) && in_array('rejected', $unique_statuses) && !in_array('pending', $unique_statuses)) {
+                                                $overall_badge = '<span class="badge bg-primary">Disetujui Sebagian</span>';
+                                            } elseif (in_array('pending', $unique_statuses)) {
+                                                $overall_badge = '<span class="status-pending">Menunggu Review</span>';
+                                            } else {
+                                                $overall_badge = '<span class="badge bg-info text-dark">Campuran</span>';
+                                            }
+                                        }
+                                    ?>
                                     <tr>
-                                        <td><?= htmlspecialchars($tb['booking_date']) ?></td>
-                                        <td><?= htmlspecialchars($tb['tool_name']) ?></td>
-                                        <td><?= htmlspecialchars($tb['quantity']) ?></td>
-                                        <td><?= htmlspecialchars($tb['start_time']) ?> - <?= htmlspecialchars($tb['end_time']) ?></td>
                                         <td>
-                                            <span class="status-<?= htmlspecialchars($tb['status']) ?>">
-                                                <?= ucfirst(htmlspecialchars($tb['status'])) ?>
-                                            </span>
+                                            <strong><?= date('d M Y', strtotime($group['created_at'])) ?></strong>
+                                            <div class="text-muted small"><?= date('H:i', strtotime($group['created_at'])) ?> WIB</div>
                                         </td>
-                                        <td><?= htmlspecialchars($tb['rejection_reason'] ?? '-') ?></td>
                                         <td>
-                                            <?php if($tb['status'] === 'pending'): ?>
-                                            <form method="POST" action="" class="d-inline" onsubmit="return confirm('Yakin ingin membatalkan pengajuan ini?');">
+                                            <div>
+                                                <strong><?= htmlspecialchars($group['booking_date']) ?></strong>
+                                                <?php if (!empty($group['end_date']) && $group['end_date'] !== $group['booking_date']): ?>
+                                                    <span class="text-muted small d-block">s/d <?= htmlspecialchars($group['end_date']) ?></span>
+                                                <?php endif; ?>
+                                            </div>
+                                            <div class="small mt-1">
+                                                <?php if ($group['start_time'] === '00:00:00' && $group['end_time'] === '23:59:59'): ?>
+                                                    <span class="badge bg-light text-dark border">Seharian (24 Jam)</span>
+                                                <?php else: ?>
+                                                    <span class="text-secondary"><?= htmlspecialchars(substr($group['start_time'], 0, 5)) ?> - <?= htmlspecialchars(substr($group['end_time'], 0, 5)) ?></span>
+                                                <?php endif; ?>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="bg-light p-2 rounded border">
+                                                <table class="table table-sm table-borderless mb-0">
+                                                    <tbody>
+                                                        <?php foreach($group['items'] as $item): ?>
+                                                        <tr class="border-bottom border-light">
+                                                            <td class="py-2">
+                                                                <strong><?= htmlspecialchars($item['tool_name']) ?></strong>
+                                                                <span class="badge bg-secondary ms-1"><?= $item['quantity'] ?> unit</span>
+                                                                <?php if(!empty($item['rejection_reason'])): ?>
+                                                                    <div class="text-danger small mt-1">
+                                                                        <em>Alasan Ditolak: <?= htmlspecialchars($item['rejection_reason']) ?></em>
+                                                                    </div>
+                                                                <?php endif; ?>
+                                                            </td>
+                                                            <td class="text-end py-2 align-middle" style="width: 140px;">
+                                                                <span class="status-<?= htmlspecialchars($item['status']) ?>">
+                                                                    <?= ucfirst(htmlspecialchars($item['status'])) ?>
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                        <?php endforeach; ?>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </td>
+                                        <td class="text-center">
+                                            <?= $overall_badge ?>
+                                        </td>
+                                        <td class="text-center">
+                                            <?php if($has_pending): ?>
+                                            <form method="POST" action="" class="d-inline" onsubmit="return confirm('Yakin ingin membatalkan pengajuan alat ini?');">
                                                 <input type="hidden" name="action" value="cancel">
-                                                <input type="hidden" name="type" value="tool">
-                                                <input type="hidden" name="id" value="<?= $tb['id'] ?>">
-                                                <button type="submit" class="btn btn-sm btn-outline-danger">Cancel</button>
+                                                <input type="hidden" name="type" value="tool_group">
+                                                <input type="hidden" name="booking_date" value="<?= htmlspecialchars($group['booking_date']) ?>">
+                                                <input type="hidden" name="created_at" value="<?= htmlspecialchars($group['created_at']) ?>">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger">Batalkan</button>
                                             </form>
                                             <?php else: ?>
-                                                -
+                                                <span class="text-muted">-</span>
                                             <?php endif; ?>
                                         </td>
                                     </tr>
@@ -214,23 +431,9 @@ require_once __DIR__ . '/../includes/header.php';
                     </table>
 
                     <?php if ($tool_total_pages > 1): ?>
-                    <div class="d-flex justify-content-between align-items-center mt-3">
-                        <span class="text-muted small">Menampilkan <?= count($tool_bookings) > 0 ? $tool_offset + 1 : 0 ?> sampai <?= $tool_offset + count($tool_bookings) ?> dari <?= $tool_total_records ?> entri</span>
-                        <nav>
-                            <ul class="pagination pagination-sm m-0">
-                                <li class="page-item <?= ($tool_page <= 1) ? 'disabled' : '' ?>">
-                                    <a class="page-link" href="?tool_page=<?= max(1, $tool_page - 1) ?>&room_page=<?= $room_page ?>">Sebelumnya</a>
-                                </li>
-                                <?php for ($i = 1; $i <= $tool_total_pages; $i++): ?>
-                                    <li class="page-item <?= ($i === $tool_page) ? 'active' : '' ?>">
-                                        <a class="page-link" href="?tool_page=<?= $i ?>&room_page=<?= $room_page ?>"><?= $i ?></a>
-                                    </li>
-                                <?php endfor; ?>
-                                <li class="page-item <?= ($tool_page >= $tool_total_pages) ? 'disabled' : '' ?>">
-                                    <a class="page-link" href="?tool_page=<?= min($tool_total_pages, $tool_page + 1) ?>&room_page=<?= $room_page ?>">Selanjutnya</a>
-                                </li>
-                            </ul>
-                        </nav>
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
+                        <span class="text-muted small">Menampilkan <?= count($grouped_tools) > 0 ? $tool_offset + 1 : 0 ?> sampai <?= $tool_offset + count($grouped_tools) ?> dari <?= $tool_total_records ?> pengajuan</span>
+                        <?php renderPagination($tool_page, $tool_total_pages, ['room_page' => $room_page], 'tool_page'); ?>
                     </div>
                     <?php endif; ?>
                 </div>

@@ -1,5 +1,6 @@
 <?php
 // config/database.php
+date_default_timezone_set('Asia/Jakarta');
 
 $host = 'localhost';
 $dbname = 'db_peminjaman_lab';
@@ -12,6 +13,8 @@ try {
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     // Set default fetch mode to associative array
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+    // Set MySQL session timezone to WIB (+07:00)
+    $pdo->exec("SET time_zone = '+07:00'");
 } catch(PDOException $e) {
     die("ERROR: Could not connect to database. " . $e->getMessage());
 }

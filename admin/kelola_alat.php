@@ -9,32 +9,43 @@ checkAuth('admin');
 // Handle Action
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
-    $id = $_POST['id'] ?? '';
-    $reason = $_POST['rejection_reason'] ?? '';
 
     try {
         $pdo->beginTransaction();
 
-        $stmt_check = $pdo->prepare("SELECT status FROM tool_bookings WHERE id = ? FOR UPDATE");
-        $stmt_check->execute([$id]);
-        $booking = $stmt_check->fetch();
-
-        if ($booking && $booking['status'] === 'pending') {
-            if ($action === 'approve') {
-                $stmt = $pdo->prepare("UPDATE tool_bookings SET status = 'approved' WHERE id = ?");
-                $stmt->execute([$id]);
-                setFlashMessage('success', 'Pengajuan alat berhasil disetujui.');
-            } elseif ($action === 'reject') {
-                if (empty($reason)) {
-                    setFlashMessage('danger', 'Alasan penolakan harus diisi.');
+        if ($action === 'process_group') {
+            $group_items = $_POST['group_items'] ?? [];
+            $approved_items = $_POST['approved_items'] ?? [];
+            $reason = trim($_POST['rejection_reason'] ?? '');
+            
+            $has_rejection = count($approved_items) < count($group_items);
+            
+            if ($has_rejection && empty($reason)) {
+                setFlashMessage('danger', 'Alasan penolakan harus diisi untuk barang yang tidak dicentang.');
+            } else {
+                $processed = 0;
+                foreach ($group_items as $id) {
+                    $stmt_check = $pdo->prepare("SELECT status FROM tool_bookings WHERE id = ? FOR UPDATE");
+                    $stmt_check->execute([$id]);
+                    $booking = $stmt_check->fetch();
+                    
+                    if ($booking && $booking['status'] === 'pending') {
+                        if (in_array($id, $approved_items)) {
+                            $stmt = $pdo->prepare("UPDATE tool_bookings SET status = 'approved' WHERE id = ?");
+                            $stmt->execute([$id]);
+                        } else {
+                            $stmt = $pdo->prepare("UPDATE tool_bookings SET status = 'rejected', rejection_reason = ? WHERE id = ?");
+                            $stmt->execute([$reason, $id]);
+                        }
+                        $processed++;
+                    }
+                }
+                if ($processed > 0) {
+                    setFlashMessage('success', 'Pengajuan alat berhasil diproses.');
                 } else {
-                    $stmt = $pdo->prepare("UPDATE tool_bookings SET status = 'rejected', rejection_reason = ? WHERE id = ?");
-                    $stmt->execute([$reason, $id]);
-                    setFlashMessage('success', 'Pengajuan alat berhasil ditolak.');
+                    setFlashMessage('danger', 'Tidak ada pengajuan valid yang diproses.');
                 }
             }
-        } else {
-            setFlashMessage('danger', 'Pengajuan tidak valid atau status sudah berubah.');
         }
 
         $pdo->commit();
@@ -48,14 +59,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Fetch Pending Bookings
 $stmt = $pdo->query("
-    SELECT tb.*, u.name as user_name, t.name as tool_name 
+    SELECT tb.*, u.name as user_name, u.phone as user_phone, u.email as user_email, t.name as tool_name 
     FROM tool_bookings tb 
     JOIN users u ON tb.user_id = u.id 
     JOIN tools t ON tb.tool_id = t.id 
     WHERE tb.status = 'pending'
-    ORDER BY tb.booking_date ASC, tb.start_time ASC
+    ORDER BY tb.booking_date ASC, tb.start_time ASC, tb.created_at ASC
 ");
 $pending_bookings = $stmt->fetchAll();
+
+$grouped_pending = [];
+foreach ($pending_bookings as $b) {
+    // Generate a unique key for the request group
+    $key = $b['user_id'] . '_' . $b['booking_date'] . '_' . $b['start_time'] . '_' . $b['end_time'] . '_' . $b['created_at'];
+    if (!isset($grouped_pending[$key])) {
+        $grouped_pending[$key] = [
+            'user_name' => $b['user_name'],
+            'user_phone' => $b['user_phone'] ?? '',
+            'user_email' => $b['user_email'] ?? '',
+            'booking_date' => $b['booking_date'],
+            'end_date' => $b['end_date'],
+            'start_time' => $b['start_time'],
+            'end_time' => $b['end_time'],
+            'created_at' => $b['created_at'],
+            'items' => []
+        ];
+    }
+    $grouped_pending[$key]['items'][] = $b;
+}
 
 // Pagination configuration for history
 $limit = 10;
@@ -72,7 +103,7 @@ $history_total_pages = ceil($history_total_records / $limit);
 
 // Fetch All Bookings (History)
 $stmt_history = $pdo->query("
-    SELECT tb.*, u.name as user_name, t.name as tool_name 
+    SELECT tb.*, u.name as user_name, u.phone as user_phone, t.name as tool_name 
     FROM tool_bookings tb 
     JOIN users u ON tb.user_id = u.id 
     JOIN tools t ON tb.tool_id = t.id 
@@ -106,58 +137,137 @@ require_once __DIR__ . '/../includes/header.php';
                 <thead class="table-light">
                     <tr>
                         <th>Pemohon</th>
+                        <th>Waktu Pengajuan</th>
                         <th>Tanggal Booking</th>
-                        <th>Alat</th>
-                        <th>Jumlah</th>
                         <th>Waktu</th>
+                        <th>Total Barang</th>
                         <th>Aksi</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php if(count($pending_bookings) === 0): ?>
+                    <?php if(count($grouped_pending) === 0): ?>
                         <tr><td colspan="6" class="text-center">Tidak ada pengajuan yang menunggu persetujuan.</td></tr>
                     <?php else: ?>
-                        <?php foreach($pending_bookings as $b): ?>
+                        <?php $modal_id = 0; ?>
+                        <?php foreach($grouped_pending as $key => $group): ?>
+                            <?php $modal_id++; ?>
                             <tr>
-                                <td><?= htmlspecialchars($b['user_name']) ?></td>
-                                <td><?= htmlspecialchars($b['booking_date']) ?></td>
-                                <td><?= htmlspecialchars($b['tool_name']) ?></td>
-                                <td><?= htmlspecialchars($b['quantity']) ?></td>
-                                <td><?= htmlspecialchars($b['start_time']) ?> - <?= htmlspecialchars($b['end_time']) ?></td>
                                 <td>
-                                    <form method="POST" action="" class="d-inline">
-                                        <input type="hidden" name="action" value="approve">
-                                        <input type="hidden" name="id" value="<?= $b['id'] ?>">
-                                        <button type="submit" class="btn btn-sm btn-success">Setujui</button>
-                                    </form>
+                                    <strong><?= htmlspecialchars($group['user_name']) ?></strong>
+                                    <div class="mt-1">
+                                        <?php if (!empty($group['user_phone'])): ?>
+                                            <?php 
+                                                $wa_phone = preg_replace('/[^0-9]/', '', $group['user_phone']);
+                                                if (str_starts_with($wa_phone, '0')) {
+                                                    $wa_phone = '62' . substr($wa_phone, 1);
+                                                }
+                                            ?>
+                                            <a href="https://wa.me/<?= $wa_phone ?>" target="_blank" class="badge bg-success text-decoration-none" title="Hubungi via WhatsApp">
+                                                📞 <?= htmlspecialchars($group['user_phone']) ?>
+                                            </a>
+                                        <?php else: ?>
+                                            <span class="badge bg-secondary">No. Telp (-)</span>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
+                                <td><?= htmlspecialchars($group['created_at']) ?></td>
+                                <td>
+                                    <?= htmlspecialchars($group['booking_date']) ?>
+                                    <?php if (!empty($group['end_date']) && $group['end_date'] !== $group['booking_date']): ?>
+                                        s/d <?= htmlspecialchars($group['end_date']) ?>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php if ($group['start_time'] === '00:00:00' && $group['end_time'] === '23:59:59'): ?>
+                                        <span class="text-muted">Seharian</span>
+                                    <?php else: ?>
+                                        <?= htmlspecialchars($group['start_time']) ?> - <?= htmlspecialchars($group['end_time']) ?>
+                                    <?php endif; ?>
+                                </td>
+                                <td><?= count($group['items']) ?> Jenis</td>
+                                <td>
+                                    <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#processModal<?= $modal_id ?>">Review & Proses</button>
                                     
-                                    <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#rejectModal<?= $b['id'] ?>">Tolak</button>
-                                    
-                                    <!-- Modal Tolak -->
-                                    <div class="modal fade" id="rejectModal<?= $b['id'] ?>" tabindex="-1">
-                                      <div class="modal-dialog">
+                                    <!-- Modal Review -->
+                                    <div class="modal fade" id="processModal<?= $modal_id ?>" tabindex="-1">
+                                      <div class="modal-dialog modal-lg">
                                         <div class="modal-content">
                                           <form method="POST" action="">
                                               <div class="modal-header">
-                                                <h5 class="modal-title">Tolak Pengajuan Alat</h5>
+                                                <h5 class="modal-title">Review Pengajuan Alat</h5>
                                                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                                               </div>
                                               <div class="modal-body">
-                                                <input type="hidden" name="action" value="reject">
-                                                <input type="hidden" name="id" value="<?= $b['id'] ?>">
-                                                <div class="mb-3">
-                                                    <label>Alasan Penolakan</label>
-                                                    <textarea name="rejection_reason" class="form-control" required></textarea>
+                                                <input type="hidden" name="action" value="process_group">
+                                                <div class="card bg-light p-3 mb-3 border-0">
+                                                    <div class="row">
+                                                        <div class="col-sm-6">
+                                                            <strong>Pemohon:</strong> <?= htmlspecialchars($group['user_name']) ?><br>
+                                                            <strong>No. Telp / WA:</strong> 
+                                                            <?php if (!empty($group['user_phone'])): ?>
+                                                                <?php 
+                                                                    $wa_phone = preg_replace('/[^0-9]/', '', $group['user_phone']);
+                                                                    if (str_starts_with($wa_phone, '0')) {
+                                                                        $wa_phone = '62' . substr($wa_phone, 1);
+                                                                    }
+                                                                ?>
+                                                                <a href="https://wa.me/<?= $wa_phone ?>" target="_blank" class="fw-bold text-success text-decoration-none">
+                                                                    <?= htmlspecialchars($group['user_phone']) ?> 📱 (Chat WA)
+                                                                </a>
+                                                            <?php else: ?>
+                                                                <span class="text-danger small">Belum diisi</span>
+                                                            <?php endif; ?><br>
+                                                            <strong>Email:</strong> <?= htmlspecialchars($group['user_email'] ?? '-') ?>
+                                                        </div>
+                                                        <div class="col-sm-6">
+                                                            <strong>Waktu Pengajuan:</strong> <?= date('d M Y H:i', strtotime($group['created_at'])) ?> WIB<br>
+                                                            <strong>Tanggal Booking:</strong> <?= htmlspecialchars($group['booking_date']) ?>
+                                                            <?php if (!empty($group['end_date']) && $group['end_date'] !== $group['booking_date']): ?>
+                                                                s/d <?= htmlspecialchars($group['end_date']) ?>
+                                                            <?php endif; ?><br>
+                                                            <strong>Waktu:</strong> 
+                                                            <?php if ($group['start_time'] === '00:00:00' && $group['end_time'] === '23:59:59'): ?>
+                                                                Seharian
+                                                            <?php else: ?>
+                                                                <?= htmlspecialchars(substr($group['start_time'], 0, 5)) ?> - <?= htmlspecialchars(substr($group['end_time'], 0, 5)) ?> WIB
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <table class="table table-bordered table-sm mb-3 text-start align-middle">
+                                                    <thead class="table-light">
+                                                        <tr>
+                                                            <th>Nama Alat</th>
+                                                            <th>Jumlah</th>
+                                                            <th style="width:100px;" class="text-center">Setujui?</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        <?php foreach($group['items'] as $item): ?>
+                                                        <tr>
+                                                            <td><strong><?= htmlspecialchars($item['tool_name']) ?></strong></td>
+                                                            <td><?= htmlspecialchars($item['quantity']) ?> Unit</td>
+                                                            <td class="text-center">
+                                                                <input type="hidden" name="group_items[]" value="<?= $item['id'] ?>">
+                                                                <input type="checkbox" name="approved_items[]" value="<?= $item['id'] ?>" class="form-check-input" checked>
+                                                            </td>
+                                                        </tr>
+                                                        <?php endforeach; ?>
+                                                    </tbody>
+                                                </table>
+                                                
+                                                <div class="mb-2 text-start">
+                                                    <label class="form-label text-danger">Alasan Penolakan <em>(Wajib diisi jika ada barang yang tidak dicentang)</em></label>
+                                                    <textarea name="rejection_reason" class="form-control" rows="2" placeholder="Contoh: Stok tidak mencukupi / Sedang perbaikan"></textarea>
                                                 </div>
                                               </div>
                                               <div class="modal-footer">
-                                                <button type="submit" class="btn btn-danger">Tolak Pengajuan</button>
+                                                <button type="submit" class="btn btn-success">Proses Pengajuan</button>
                                               </div>
                                           </form>
                                         </div>
                                       </div>
                                     </div>
-
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -188,11 +298,27 @@ require_once __DIR__ . '/../includes/header.php';
                     <?php else: ?>
                         <?php foreach($history_bookings as $b): ?>
                             <tr>
-                                <td><?= htmlspecialchars($b['user_name']) ?></td>
-                                <td><?= htmlspecialchars($b['booking_date']) ?></td>
+                                <td>
+                                    <strong><?= htmlspecialchars($b['user_name']) ?></strong>
+                                    <?php if (!empty($b['user_phone'])): ?>
+                                        <div class="small text-muted">📞 <?= htmlspecialchars($b['user_phone']) ?></div>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?= htmlspecialchars($b['booking_date']) ?>
+                                    <?php if (!empty($b['end_date']) && $b['end_date'] !== $b['booking_date']): ?>
+                                        s/d <?= htmlspecialchars($b['end_date']) ?>
+                                    <?php endif; ?>
+                                </td>
                                 <td><?= htmlspecialchars($b['tool_name']) ?></td>
                                 <td><?= htmlspecialchars($b['quantity']) ?></td>
-                                <td><?= htmlspecialchars($b['start_time']) ?> - <?= htmlspecialchars($b['end_time']) ?></td>
+                                <td>
+                                    <?php if ($b['start_time'] === '00:00:00' && $b['end_time'] === '23:59:59'): ?>
+                                        <span class="text-muted">Seharian</span>
+                                    <?php else: ?>
+                                        <?= htmlspecialchars($b['start_time']) ?> - <?= htmlspecialchars($b['end_time']) ?>
+                                    <?php endif; ?>
+                                </td>
                                 <td>
                                     <span class="status-<?= htmlspecialchars($b['status']) ?>">
                                         <?= ucfirst(htmlspecialchars($b['status'])) ?>
@@ -206,23 +332,9 @@ require_once __DIR__ . '/../includes/header.php';
             </table>
 
             <?php if ($history_total_pages > 1): ?>
-            <div class="d-flex justify-content-between align-items-center mt-3">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
                 <span class="text-muted small">Menampilkan <?= count($history_bookings) > 0 ? $history_offset + 1 : 0 ?> sampai <?= $history_offset + count($history_bookings) ?> dari <?= $history_total_records ?> entri</span>
-                <nav>
-                    <ul class="pagination pagination-sm m-0">
-                        <li class="page-item <?= ($history_page <= 1) ? 'disabled' : '' ?>">
-                            <a class="page-link" href="?page=<?= max(1, $history_page - 1) ?>">Sebelumnya</a>
-                        </li>
-                        <?php for ($i = 1; $i <= $history_total_pages; $i++): ?>
-                            <li class="page-item <?= ($i === $history_page) ? 'active' : '' ?>">
-                                <a class="page-link" href="?page=<?= $i ?>"><?= $i ?></a>
-                            </li>
-                        <?php endfor; ?>
-                        <li class="page-item <?= ($history_page >= $history_total_pages) ? 'disabled' : '' ?>">
-                            <a class="page-link" href="?page=<?= min($history_total_pages, $history_page + 1) ?>">Selanjutnya</a>
-                        </li>
-                    </ul>
-                </nav>
+                <?php renderPagination($history_page, $history_total_pages); ?>
             </div>
             <?php endif; ?>
         </div>

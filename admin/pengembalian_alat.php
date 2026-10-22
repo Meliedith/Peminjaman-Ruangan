@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // Fetch active tools currently in use
 $stmt = $pdo->query("
-    SELECT tb.*, u.name as user_name, t.name as tool_name 
+    SELECT tb.*, u.name as user_name, u.phone as user_phone, t.name as tool_name 
     FROM tool_bookings tb 
     JOIN users u ON tb.user_id = u.id 
     JOIN tools t ON tb.tool_id = t.id 
@@ -55,7 +55,7 @@ $total_history_pages = ceil($total_history_records / $limit);
 
 // Fetch history records
 $stmt_history = $pdo->prepare("
-    SELECT tb.*, u.name as user_name, t.name as tool_name 
+    SELECT tb.*, u.name as user_name, u.phone as user_phone, t.name as tool_name 
     FROM tool_bookings tb 
     JOIN users u ON tb.user_id = u.id 
     JOIN tools t ON tb.tool_id = t.id 
@@ -103,11 +103,37 @@ require_once __DIR__ . '/../includes/header.php';
                 <?php else: ?>
                     <?php foreach($active_bookings as $b): ?>
                         <tr>
-                            <td><?= htmlspecialchars($b['user_name']) ?></td>
+                            <td>
+                                <strong><?= htmlspecialchars($b['user_name']) ?></strong>
+                                <?php if (!empty($b['user_phone'])): ?>
+                                    <?php 
+                                        $wa_phone = preg_replace('/[^0-9]/', '', $b['user_phone']);
+                                        if (str_starts_with($wa_phone, '0')) {
+                                            $wa_phone = '62' . substr($wa_phone, 1);
+                                        }
+                                    ?>
+                                    <div class="mt-1">
+                                        <a href="https://wa.me/<?= $wa_phone ?>" target="_blank" class="badge bg-success text-decoration-none" title="Hubungi via WhatsApp">
+                                            📞 <?= htmlspecialchars($b['user_phone']) ?>
+                                        </a>
+                                    </div>
+                                <?php endif; ?>
+                            </td>
                             <td><?= htmlspecialchars($b['tool_name']) ?></td>
                             <td><?= htmlspecialchars($b['quantity']) ?></td>
-                            <td><?= htmlspecialchars($b['booking_date']) ?></td>
-                            <td><?= htmlspecialchars($b['start_time']) ?> - <?= htmlspecialchars($b['end_time']) ?></td>
+                            <td>
+                                <?= htmlspecialchars($b['booking_date']) ?>
+                                <?php if (!empty($b['end_date']) && $b['end_date'] !== $b['booking_date']): ?>
+                                    s/d <?= htmlspecialchars($b['end_date']) ?>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if ($b['start_time'] === '00:00:00' && $b['end_time'] === '23:59:59'): ?>
+                                    <span class="text-muted">Seharian</span>
+                                <?php else: ?>
+                                    <?= htmlspecialchars($b['start_time']) ?> - <?= htmlspecialchars($b['end_time']) ?>
+                                <?php endif; ?>
+                            </td>
                             <td>
                                 <form method="POST" action="" class="d-inline" onsubmit="return confirm('Tandai alat ini sudah selesai / dikembalikan?');">
                                     <input type="hidden" name="action" value="complete">
@@ -146,7 +172,12 @@ require_once __DIR__ . '/../includes/header.php';
                                 <td><?= htmlspecialchars($h['user_name']) ?></td>
                                 <td><?= htmlspecialchars($h['tool_name']) ?></td>
                                 <td><?= htmlspecialchars($h['quantity']) ?></td>
-                                <td><?= htmlspecialchars($h['booking_date']) ?></td>
+                                <td>
+                                    <?= htmlspecialchars($h['booking_date']) ?>
+                                    <?php if (!empty($h['end_date']) && $h['end_date'] !== $h['booking_date']): ?>
+                                        s/d <?= htmlspecialchars($h['end_date']) ?>
+                                    <?php endif; ?>
+                                </td>
                                 <td><?= htmlspecialchars($h['updated_at']) ?></td>
                                 <td><span class="badge bg-success">Dikembalikan</span></td>
                             </tr>
@@ -156,23 +187,9 @@ require_once __DIR__ . '/../includes/header.php';
             </table>
             
             <?php if ($total_history_pages > 1): ?>
-            <div class="d-flex justify-content-between align-items-center mt-3">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
                 <span class="text-muted small">Menampilkan <?= count($history_bookings) > 0 ? $offset + 1 : 0 ?> sampai <?= $offset + count($history_bookings) ?> dari <?= $total_history_records ?> entri</span>
-                <nav>
-                    <ul class="pagination pagination-sm m-0">
-                        <li class="page-item <?= ($page <= 1) ? 'disabled' : '' ?>">
-                            <a class="page-link" href="?page=<?= max(1, $page - 1) ?>">Sebelumnya</a>
-                        </li>
-                        <?php for ($i = 1; $i <= $total_history_pages; $i++): ?>
-                            <li class="page-item <?= ($i === $page) ? 'active' : '' ?>">
-                                <a class="page-link" href="?page=<?= $i ?>"><?= $i ?></a>
-                            </li>
-                        <?php endfor; ?>
-                        <li class="page-item <?= ($page >= $total_history_pages) ? 'disabled' : '' ?>">
-                            <a class="page-link" href="?page=<?= min($total_history_pages, $page + 1) ?>">Selanjutnya</a>
-                        </li>
-                    </ul>
-                </nav>
+                <?php renderPagination($page, $total_history_pages); ?>
             </div>
             <?php endif; ?>
         </div>

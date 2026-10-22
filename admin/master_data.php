@@ -25,14 +25,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['type'])) {
         $stock = (int)($_POST['stock'] ?? 0);
         $kondisi = trim($_POST['kondisi'] ?? 'Baik');
         $is_active = isset($_POST['is_active']) ? 1 : 0;
-        
+
+        $image_filename = null;
+        if (isset($_FILES['image']) && $_FILES['image']['error'] !== UPLOAD_ERR_NO_FILE) {
+            $upload_res = handleToolImageUpload($_FILES['image']);
+            if (!$upload_res['success']) {
+                setFlashMessage('danger', 'Gagal upload gambar: ' . $upload_res['error']);
+                redirect('/admin/master_data.php');
+                exit;
+            }
+            $image_filename = $upload_res['filename'];
+        }
+
         if (!empty($name) && $stock >= 0) {
-            $stmt = $pdo->prepare("INSERT INTO tools (kode, name, jenis, lokasi, total_stock, kondisi, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)");
-            $stmt->execute([$kode, $name, $jenis, $lokasi, $stock, $kondisi, $is_active]);
+            $stmt = $pdo->prepare("INSERT INTO tools (kode, name, jenis, lokasi, total_stock, kondisi, is_active, image) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$kode, $name, $jenis, $lokasi, $stock, $kondisi, $is_active, $image_filename]);
             setFlashMessage('success', 'Alat berhasil ditambahkan.');
         } else {
+            if ($image_filename) {
+                deleteToolImage($image_filename);
+            }
             setFlashMessage('danger', 'Data alat tidak valid.');
         }
+        redirect('/admin/master_data.php');
+        exit;
     } elseif ($action === 'edit') {
         $id = $_POST['id'] ?? '';
         $kode = trim($_POST['kode'] ?? '');
@@ -42,24 +58,73 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['type'])) {
         $stock = (int)($_POST['stock'] ?? 0);
         $kondisi = trim($_POST['kondisi'] ?? 'Baik');
         $is_active = isset($_POST['is_active']) ? 1 : 0;
-        
-        if (!empty($name) && $stock >= 0) {
-            $stmt = $pdo->prepare("UPDATE tools SET kode = ?, name = ?, jenis = ?, lokasi = ?, total_stock = ?, kondisi = ?, is_active = ? WHERE id = ?");
-            $stmt->execute([$kode, $name, $jenis, $lokasi, $stock, $kondisi, $is_active, $id]);
-            setFlashMessage('success', 'Alat berhasil diubah.');
+        $delete_image = isset($_POST['delete_image']) && $_POST['delete_image'] == '1';
+
+        // Ambil gambar lama dari database
+        $stmt_curr = $pdo->prepare("SELECT image FROM tools WHERE id = ?");
+        $stmt_curr->execute([$id]);
+        $curr_tool = $stmt_curr->fetch(PDO::FETCH_ASSOC);
+        $curr_image = $curr_tool['image'] ?? null;
+        $new_image = $curr_image;
+
+        if ($delete_image) {
+            deleteToolImage($curr_image);
+            $new_image = null;
         }
+
+        if (isset($_FILES['image']) && $_FILES['image']['error'] !== UPLOAD_ERR_NO_FILE) {
+            $upload_res = handleToolImageUpload($_FILES['image'], $curr_image);
+            if (!$upload_res['success']) {
+                setFlashMessage('danger', 'Gagal upload gambar: ' . $upload_res['error']);
+                redirect('/admin/master_data.php');
+                exit;
+            }
+            $new_image = $upload_res['filename'];
+        }
+
+        if (!empty($name) && $stock >= 0) {
+            $stmt = $pdo->prepare("UPDATE tools SET kode = ?, name = ?, jenis = ?, lokasi = ?, total_stock = ?, kondisi = ?, is_active = ?, image = ? WHERE id = ?");
+            $stmt->execute([$kode, $name, $jenis, $lokasi, $stock, $kondisi, $is_active, $new_image, $id]);
+            setFlashMessage('success', 'Alat berhasil diubah.');
+        } else {
+            setFlashMessage('danger', 'Data alat tidak valid.');
+        }
+        redirect('/admin/master_data.php');
+        exit;
     } elseif ($action === 'delete') {
         $id = $_POST['id'] ?? '';
-        // Try to delete if not referenced, otherwise soft delete (deactivate)
-        try {
+        $stmt = $pdo->prepare("UPDATE tools SET deleted_at = NOW() WHERE id = ?");
+        $stmt->execute([$id]);
+        setFlashMessage('success', 'Alat berhasil dihapus (dipindahkan ke Tempat Sampah). Riwayat peminjaman tetap aman.');
+        redirect('/admin/master_data.php');
+        exit;
+    } elseif ($action === 'restore') {
+        $id = $_POST['id'] ?? '';
+        $stmt = $pdo->prepare("UPDATE tools SET deleted_at = NULL WHERE id = ?");
+        $stmt->execute([$id]);
+        setFlashMessage('success', 'Alat berhasil dipulihkan kembali ke daftar aktif.');
+        redirect('/admin/master_data.php?view=trash');
+        exit;
+    } elseif ($action === 'force_delete') {
+        $id = $_POST['id'] ?? '';
+        // Cek apakah ada riwayat peminjaman
+        $stmt_check = $pdo->prepare("SELECT COUNT(*) FROM tool_bookings WHERE tool_id = ?");
+        $stmt_check->execute([$id]);
+        if ($stmt_check->fetchColumn() > 0) {
+            setFlashMessage('danger', 'Gagal: Alat tidak bisa dihapus permanen karena masih tercatat dalam riwayat peminjaman!');
+        } else {
+            $stmt_img = $pdo->prepare("SELECT image FROM tools WHERE id = ?");
+            $stmt_img->execute([$id]);
+            $img_to_del = $stmt_img->fetchColumn();
+            if ($img_to_del) {
+                deleteToolImage($img_to_del);
+            }
             $stmt = $pdo->prepare("DELETE FROM tools WHERE id = ?");
             $stmt->execute([$id]);
-            setFlashMessage('success', 'Alat berhasil dihapus.');
-        } catch (PDOException $e) {
-            $stmt = $pdo->prepare("UPDATE tools SET is_active = 0 WHERE id = ?");
-            $stmt->execute([$id]);
-            setFlashMessage('warning', 'Alat tidak bisa dihapus permanen karena ada histori peminjaman. Status diubah menjadi non-aktif.');
+            setFlashMessage('success', 'Alat berhasil dihapus permanen dari database.');
         }
+        redirect('/admin/master_data.php?view=trash');
+        exit;
     } elseif ($action === 'toggle_active') {
         $id = $_POST['id'] ?? '';
         $is_active = (int)($_POST['is_active'] ?? 0);
@@ -68,15 +133,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['type'])) {
         echo json_encode(['success' => true]);
         exit;
     } elseif ($action === 'activate_all') {
-        $pdo->exec("UPDATE tools SET is_active = 1");
-        setFlashMessage('success', 'Semua alat berhasil diaktifkan.');
+        $pdo->exec("UPDATE tools SET is_active = 1 WHERE deleted_at IS NULL");
+        setFlashMessage('success', 'Semua alat aktif berhasil diaktifkan.');
         redirect('/admin/master_data.php');
     } elseif ($action === 'deactivate_all') {
-        $pdo->exec("UPDATE tools SET is_active = 0");
-        setFlashMessage('success', 'Semua alat berhasil dinonaktifkan.');
+        $pdo->exec("UPDATE tools SET is_active = 0 WHERE deleted_at IS NULL");
+        setFlashMessage('success', 'Semua alat aktif berhasil dinonaktifkan.');
         redirect('/admin/master_data.php');
     } elseif ($action === 'export') {
-        $stmt = $pdo->query("SELECT kode, name, jenis, lokasi, total_stock, kondisi, is_active FROM tools ORDER BY name ASC");
+        $stmt = $pdo->query("SELECT kode, name, jenis, lokasi, total_stock, kondisi, is_active FROM tools WHERE deleted_at IS NULL ORDER BY name ASC");
         $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
         $excelData = [];
@@ -217,12 +282,25 @@ if (empty($list_lokasi)) {
     $list_lokasi = $stmt_lokasi->fetchAll(PDO::FETCH_ASSOC);
 }
 
+// View Tab Parameter: default = active, 'trash' = deleted items
+$view_trash = isset($_GET['view']) && $_GET['view'] === 'trash';
+
+// Get counts for tabs
+$trashed_count = (int)$pdo->query("SELECT COUNT(*) FROM tools WHERE deleted_at IS NOT NULL")->fetchColumn();
+$active_tools_count = (int)$pdo->query("SELECT COUNT(*) FROM tools WHERE deleted_at IS NULL")->fetchColumn();
+
 // Filter Parameters
 $search_query = trim($_GET['search'] ?? '');
 $filter_jenis = $_GET['jenis'] ?? '';
 $filter_lokasi = $_GET['lokasi'] ?? '';
 $where_clauses = [];
 $params = [];
+
+if ($view_trash) {
+    $where_clauses[] = "tools.deleted_at IS NOT NULL";
+} else {
+    $where_clauses[] = "tools.deleted_at IS NULL";
+}
 
 if (!empty($search_query)) {
     $where_clauses[] = "(tools.name LIKE ? OR tools.kode LIKE ?)";
@@ -281,8 +359,23 @@ require_once __DIR__ . '/../includes/header.php';
 <h3 class="mb-4">Kelola Master Data</h3>
 
 <div class="card shadow-sm p-4 mb-5">
+    <!-- Nav Tabs: Aktif vs Tempat Sampah -->
+    <ul class="nav nav-pills mb-4 gap-2">
+        <li class="nav-item">
+            <a class="nav-link <?= !$view_trash ? 'active' : '' ?>" href="master_data.php">
+                📦 Daftar Alat Aktif <span class="badge <?= !$view_trash ? 'bg-light text-dark' : 'bg-secondary' ?> ms-1"><?= $active_tools_count ?></span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link <?= $view_trash ? 'active bg-danger text-white' : 'text-danger' ?>" href="master_data.php?view=trash">
+                🗑️ Tempat Sampah <span class="badge <?= $view_trash ? 'bg-light text-danger' : 'bg-danger text-white' ?> ms-1"><?= $trashed_count ?></span>
+            </a>
+        </li>
+    </ul>
+
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-3 gap-3">
-        <h4 class="m-0">Daftar Alat Laboratorium</h4>
+        <h4 class="m-0"><?= $view_trash ? 'Tempat Sampah Alat (Terhapus)' : 'Daftar Alat Laboratorium' ?></h4>
+        <?php if (!$view_trash): ?>
         <div class="d-flex flex-wrap gap-2">
             <!-- Dropdown Excel -->
             <div class="btn-group">
@@ -311,10 +404,14 @@ require_once __DIR__ . '/../includes/header.php';
             </button>
             <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addToolModal">Tambah Alat</button>
         </div>
+        <?php endif; ?>
     </div>
     
     <!-- Filter Form -->
     <form method="GET" action="" class="row g-3 mb-4 bg-light p-3 rounded">
+        <?php if ($view_trash): ?>
+            <input type="hidden" name="view" value="trash">
+        <?php endif; ?>
         <div class="col-md-3">
             <label class="form-label">Cari Alat</label>
             <input type="text" name="search" class="form-control" placeholder="Nama atau Kode..." value="<?= htmlspecialchars($search_query) ?>">
@@ -339,10 +436,11 @@ require_once __DIR__ . '/../includes/header.php';
         </div>
         <div class="col-md-3 d-flex align-items-end">
             <button type="submit" class="btn btn-secondary w-100 me-2">Terapkan</button>
-            <a href="master_data.php" class="btn btn-outline-secondary">Reset</a>
+            <a href="master_data.php<?= $view_trash ? '?view=trash' : '' ?>" class="btn btn-outline-secondary">Reset</a>
         </div>
     </form>
     
+    <?php if (!$view_trash): ?>
     <div class="d-flex mb-3 gap-2">
         <form method="POST" action="" onsubmit="return confirm('Yakin ingin mengaktifkan semua alat?');">
             <input type="hidden" name="type" value="tool">
@@ -355,12 +453,18 @@ require_once __DIR__ . '/../includes/header.php';
             <button type="submit" class="btn btn-sm btn-secondary"><i class="bi bi-x-circle"></i> Nonaktifkan Semua</button>
         </form>
     </div>
+    <?php else: ?>
+    <div class="alert alert-warning py-2 px-3 mb-3 d-flex align-items-center">
+        <span class="me-2 fs-5">ℹ️</span>
+        <div><strong>Tempat Sampah Alat:</strong> Alat di bawah ini telah dihapus (soft delete). Riwayat transaksi peminjaman mahasiswa tetap aman dan tidak rusak. Anda dapat memulihkannya kembali kapan saja.</div>
+    </div>
+    <?php endif; ?>
 
     <div class="table-responsive">
         <table class="table table-hover align-middle">
             <thead class="table-light">
                 <?php 
-                function sortLink($column, $label, $current_sort, $current_order, $filter_jenis, $filter_lokasi) {
+                function sortLink($column, $label, $current_sort, $current_order, $filter_jenis, $filter_lokasi, $view_trash = false) {
                     $new_order = ($current_sort === $column && $current_order === 'ASC') ? 'DESC' : 'ASC';
                     $icon = '';
                     if ($current_sort === $column) {
@@ -370,6 +474,7 @@ require_once __DIR__ . '/../includes/header.php';
                     }
                     
                     $query_params = http_build_query(array_filter([
+                        'view' => $view_trash ? 'trash' : null,
                         'search' => $_GET['search'] ?? '',
                         'jenis' => $filter_jenis,
                         'lokasi' => $filter_lokasi,
@@ -380,63 +485,99 @@ require_once __DIR__ . '/../includes/header.php';
                 }
                 ?>
                 <tr>
-                    <th><?= sortLink('kode', 'Kode', $sort, $order, $filter_jenis, $filter_lokasi) ?></th>
-                    <th><?= sortLink('name', 'Nama Barang', $sort, $order, $filter_jenis, $filter_lokasi) ?></th>
-                    <th><?= sortLink('jenis', 'Jenis', $sort, $order, $filter_jenis, $filter_lokasi) ?></th>
-                    <th><?= sortLink('lokasi', 'Lokasi', $sort, $order, $filter_jenis, $filter_lokasi) ?></th>
-                    <th><?= sortLink('total_stock', 'Total', $sort, $order, $filter_jenis, $filter_lokasi) ?></th>
+                    <th style="width: 55px;" class="text-center">Foto</th>
+                    <th><?= sortLink('kode', 'Kode', $sort, $order, $filter_jenis, $filter_lokasi, $view_trash) ?></th>
+                    <th><?= sortLink('name', 'Nama Barang', $sort, $order, $filter_jenis, $filter_lokasi, $view_trash) ?></th>
+                    <th><?= sortLink('jenis', 'Jenis', $sort, $order, $filter_jenis, $filter_lokasi, $view_trash) ?></th>
+                    <th><?= sortLink('lokasi', 'Lokasi', $sort, $order, $filter_jenis, $filter_lokasi, $view_trash) ?></th>
+                    <th><?= sortLink('total_stock', 'Total', $sort, $order, $filter_jenis, $filter_lokasi, $view_trash) ?></th>
                     <th>Tersedia</th>
-                    <th><?= sortLink('kondisi', 'Kondisi', $sort, $order, $filter_jenis, $filter_lokasi) ?></th>
-                    <th><?= sortLink('is_active', 'Status', $sort, $order, $filter_jenis, $filter_lokasi) ?></th>
+                    <th><?= sortLink('kondisi', 'Kondisi', $sort, $order, $filter_jenis, $filter_lokasi, $view_trash) ?></th>
+                    <th><?= $view_trash ? 'Waktu Dihapus' : sortLink('is_active', 'Status', $sort, $order, $filter_jenis, $filter_lokasi, $view_trash) ?></th>
                     <th>Aksi</th>
                 </tr>
             </thead>
             <tbody>
-                <?php foreach($tools as $t): 
-                    $dynamic_available = max(0, $t['total_stock'] - $t['current_borrowed']);
-                ?>
+                <?php if (count($tools) === 0): ?>
                     <tr>
-                        <td style="color: #d85c82; font-family: monospace;"><?= htmlspecialchars($t['kode'] ?? '-') ?></td>
-                        <td><?= htmlspecialchars($t['name']) ?></td>
-                        <td><?= htmlspecialchars($t['jenis'] ?? '-') ?></td>
-                        <td><?= htmlspecialchars($t['lokasi'] ?? '-') ?></td>
-                        <td><?= htmlspecialchars($t['total_stock']) ?></td>
-                        <td>
-                            <?php if ($t['current_borrowed'] > 0): ?>
-                                <span class="badge bg-warning text-dark"><?= $dynamic_available ?> (<?= $t['current_borrowed'] ?> dipinjam)</span>
-                            <?php else: ?>
-                                <?= $dynamic_available ?>
-                            <?php endif; ?>
+                        <td colspan="10" class="text-center py-4 text-muted">
+                            <?= $view_trash ? 'Tempat sampah kosong. Tidak ada alat yang terhapus.' : 'Tidak ada data alat ditemukan.' ?>
                         </td>
-                        <td>
-                            <?php if(($t['kondisi'] ?? '') === 'Baik'): ?>
-                                <span class="badge bg-info text-dark">Baik</span>
-                            <?php elseif(($t['kondisi'] ?? '') === 'Rusak Ringan'): ?>
-                                <span class="badge bg-info text-dark">Rusak Ringan</span>
-                            <?php else: ?>
-                                <span class="badge bg-secondary"><?= htmlspecialchars($t['kondisi'] ?? 'Baik') ?></span>
-                            <?php endif; ?>
-                        </td>
-                        <td>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input toggle-active" type="checkbox" data-id="<?= $t['id'] ?>" <?= $t['is_active'] ? 'checked' : '' ?>>
-                                <label class="form-check-label"><?= $t['is_active'] ? 'Aktif' : 'Non-Aktif' ?></label>
-                            </div>
-                        </td>
-                        <td>
-                            <button type="button" class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#editToolModal<?= $t['id'] ?>">Edit</button>
-                            <form method="POST" action="" class="d-inline" onsubmit="return confirm('Hapus / Nonaktifkan alat ini?');">
-                                <input type="hidden" name="type" value="tool">
-                                <input type="hidden" name="action" value="delete">
-                                <input type="hidden" name="id" value="<?= $t['id'] ?>">
-                                <button type="submit" class="btn btn-sm btn-danger">Hapus</button>
-                            </form>
+                    </tr>
+                <?php else: ?>
+                    <?php foreach($tools as $t): 
+                        $dynamic_available = max(0, $t['total_stock'] - $t['current_borrowed']);
+                        $img_url = getToolImageUrl($t['image'] ?? null);
+                    ?>
+                        <tr>
+                            <td class="text-center align-middle" style="width: 55px; min-width: 55px; max-width: 55px;">
+                                <?php if ($img_url): ?>
+                                    <img src="<?= $img_url ?>" alt="<?= htmlspecialchars($t['name']) ?>" class="tool-thumb btn-preview-tool" style="width: 44px; height: 44px; min-width: 44px; min-height: 44px; max-width: 44px; max-height: 44px; object-fit: cover; border-radius: 6px; cursor: pointer; display: inline-block; border: 1px solid #dee2e6;" data-img="<?= $img_url ?>" data-name="<?= htmlspecialchars($t['name']) ?>" title="Klik untuk lihat preview">
+                                <?php else: ?>
+                                    <span class="tool-thumb-placeholder" style="width: 44px; height: 44px; min-width: 44px; min-height: 44px; max-width: 44px; max-height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; border: 1px dashed #ced4da; background: #f8f9fa; color: #adb5bd; font-size: 0.75rem;" title="Tidak ada foto">-</span>
+                                <?php endif; ?>
+                            </td>
+                            <td style="color: #d85c82; font-family: monospace;"><?= htmlspecialchars($t['kode'] ?? '-') ?></td>
+                            <td><strong><?= htmlspecialchars($t['name']) ?></strong></td>
+                            <td><?= htmlspecialchars($t['jenis'] ?? '-') ?></td>
+                            <td><?= htmlspecialchars($t['lokasi'] ?? '-') ?></td>
+                            <td><?= htmlspecialchars($t['total_stock']) ?></td>
+                            <td>
+                                <?php if ($t['current_borrowed'] > 0): ?>
+                                    <span class="badge bg-warning text-dark"><?= $dynamic_available ?> (<?= $t['current_borrowed'] ?> dipinjam)</span>
+                                <?php else: ?>
+                                    <?= $dynamic_available ?>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if(($t['kondisi'] ?? '') === 'Baik'): ?>
+                                    <span class="badge bg-info text-dark">Baik</span>
+                                <?php elseif(($t['kondisi'] ?? '') === 'Rusak Ringan'): ?>
+                                    <span class="badge bg-info text-dark">Rusak Ringan</span>
+                                <?php else: ?>
+                                    <span class="badge bg-secondary"><?= htmlspecialchars($t['kondisi'] ?? 'Baik') ?></span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if (!$view_trash): ?>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input toggle-active" type="checkbox" data-id="<?= $t['id'] ?>" <?= $t['is_active'] ? 'checked' : '' ?>>
+                                        <label class="form-check-label"><?= $t['is_active'] ? 'Aktif' : 'Non-Aktif' ?></label>
+                                    </div>
+                                <?php else: ?>
+                                    <span class="badge bg-danger">Terhapus</span>
+                                    <div class="small text-muted" style="font-size: 0.78rem;"><?= htmlspecialchars($t['deleted_at'] ?? '-') ?></div>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if (!$view_trash): ?>
+                                    <button type="button" class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#editToolModal<?= $t['id'] ?>">Edit</button>
+                                    <form method="POST" action="" class="d-inline" onsubmit="return confirm('Pindahkan alat ini ke Tempat Sampah (Soft Delete)? Alat tidak akan muncul di daftar, tetapi histori transaksi tetap aman.');">
+                                        <input type="hidden" name="type" value="tool">
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="id" value="<?= $t['id'] ?>">
+                                        <button type="submit" class="btn btn-sm btn-danger">Hapus</button>
+                                    </form>
+                                <?php else: ?>
+                                    <form method="POST" action="" class="d-inline" onsubmit="return confirm('Pulihkan alat ini kembali ke daftar aktif?');">
+                                        <input type="hidden" name="type" value="tool">
+                                        <input type="hidden" name="action" value="restore">
+                                        <input type="hidden" name="id" value="<?= $t['id'] ?>">
+                                        <button type="submit" class="btn btn-sm btn-success">♻️ Pulihkan</button>
+                                    </form>
+                                    <form method="POST" action="" class="d-inline" onsubmit="return confirm('Hapus permanen alat ini? PERHATIAN: Hanya berhasil jika alat belum pernah dipinjam!');">
+                                        <input type="hidden" name="type" value="tool">
+                                        <input type="hidden" name="action" value="force_delete">
+                                        <input type="hidden" name="id" value="<?= $t['id'] ?>">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">Hapus Permanen</button>
+                                    </form>
+                                <?php endif; ?>
                             
                             <!-- Edit Modal -->
                             <div class="modal fade" id="editToolModal<?= $t['id'] ?>" tabindex="-1">
                               <div class="modal-dialog">
                                 <div class="modal-content">
-                                  <form method="POST" action="">
+                                  <form method="POST" action="" enctype="multipart/form-data">
                                       <div class="modal-header">
                                         <h5 class="modal-title">Edit Alat</h5>
                                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -445,16 +586,35 @@ require_once __DIR__ . '/../includes/header.php';
                                         <input type="hidden" name="type" value="tool">
                                         <input type="hidden" name="action" value="edit">
                                         <input type="hidden" name="id" value="<?= $t['id'] ?>">
+
                                         <div class="mb-3">
-                                            <label>Kode Barang</label>
+                                            <label class="form-label">Kode Barang</label>
                                             <input type="text" name="kode" class="form-control" value="<?= htmlspecialchars($t['kode'] ?? '') ?>">
                                         </div>
                                         <div class="mb-3">
-                                            <label>Nama Alat</label>
+                                            <label class="form-label">Nama Alat</label>
                                             <input type="text" name="name" class="form-control" value="<?= htmlspecialchars($t['name']) ?>" required>
                                         </div>
                                         <div class="mb-3">
-                                            <label>Jenis</label>
+                                            <label class="form-label">Foto Alat <small class="text-muted">(Opsional, Max 3MB)</small></label>
+                                            <?php if ($img_url): ?>
+                                                <div class="d-flex align-items-center gap-3 mb-2 p-2 bg-light rounded border">
+                                                    <div class="tool-small-preview-box" style="width: 50px !important; height: 50px !important; max-width: 50px !important; max-height: 50px !important;">
+                                                        <img src="<?= $img_url ?>" alt="Foto saat ini" style="width: 50px !important; height: 50px !important;">
+                                                    </div>
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox" name="delete_image" value="1" id="del_img_<?= $t['id'] ?>">
+                                                        <label class="form-check-label text-danger small" for="del_img_<?= $t['id'] ?>">
+                                                            Hapus foto saat ini
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            <?php endif; ?>
+                                            <input type="file" name="image" class="form-control" accept="image/jpeg,image/png,image/webp,image/gif">
+                                            <small class="text-muted d-block mt-1">Pilih gambar baru jika ingin mengganti foto.</small>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label">Jenis</label>
                                             <select name="jenis" class="form-select">
                                                 <option value="">Pilih Jenis</option>
                                                 <?php foreach($list_jenis as $j): ?>
@@ -463,7 +623,7 @@ require_once __DIR__ . '/../includes/header.php';
                                             </select>
                                         </div>
                                         <div class="mb-3">
-                                            <label>Lokasi</label>
+                                            <label class="form-label">Lokasi</label>
                                             <select name="lokasi" class="form-select">
                                                 <option value="">Pilih Lokasi</option>
                                                 <?php foreach($list_lokasi as $l): ?>
@@ -472,12 +632,12 @@ require_once __DIR__ . '/../includes/header.php';
                                             </select>
                                         </div>
                                         <div class="mb-3">
-                                            <label>Total Stok</label>
+                                            <label class="form-label">Total Stok</label>
                                             <input type="number" name="stock" class="form-control" value="<?= htmlspecialchars($t['total_stock']) ?>" required min="0">
                                             <small class="text-muted">Ketersediaan akan dihitung secara dinamis dari Total Stok dikurangi jumlah yang sedang dipinjam.</small>
                                         </div>
                                         <div class="mb-3">
-                                            <label>Kondisi</label>
+                                            <label class="form-label">Kondisi</label>
                                             <select name="kondisi" class="form-select">
                                                 <option value="Baik" <?= ($t['kondisi'] ?? '') === 'Baik' ? 'selected' : '' ?>>Baik</option>
                                                 <option value="Rusak Ringan" <?= ($t['kondisi'] ?? '') === 'Rusak Ringan' ? 'selected' : '' ?>>Rusak Ringan</option>
@@ -500,6 +660,7 @@ require_once __DIR__ . '/../includes/header.php';
                         </td>
                     </tr>
                 <?php endforeach; ?>
+                <?php endif; ?>
             </tbody>
         </table>
         
@@ -513,54 +674,16 @@ require_once __DIR__ . '/../includes/header.php';
             </div>
             
             <?php if ($total_pages > 1): ?>
-            <nav aria-label="Page navigation">
-                <ul class="pagination pagination-sm m-0">
-                    <?php 
-                        $query_params = array_filter([
-                            'search' => $search_query,
-                            'jenis' => $filter_jenis,
-                            'lokasi' => $filter_lokasi,
-                            'sort' => $sort,
-                            'order' => $order
-                        ]);
-                    ?>
-                    
-                    <!-- Sebelumnya -->
-                    <li class="page-item <?= ($page <= 1) ? 'disabled' : '' ?>">
-                        <a class="page-link" href="?<?= http_build_query(array_merge($query_params, ['page' => $page - 1])) ?>">Sebelumnya</a>
-                    </li>
-                    
-                    <!-- Page Numbers -->
-                    <?php 
-                        $start_page = max(1, $page - 2);
-                        $end_page = min($total_pages, $page + 2);
-                        
-                        if ($start_page > 1) {
-                            echo '<li class="page-item"><a class="page-link" href="?' . http_build_query(array_merge($query_params, ['page' => 1])) . '">1</a></li>';
-                            if ($start_page > 2) {
-                                echo '<li class="page-item disabled"><span class="page-link">...</span></li>';
-                            }
-                        }
-                        
-                        for ($i = $start_page; $i <= $end_page; $i++) {
-                            $active = ($i === $page) ? 'active' : '';
-                            echo '<li class="page-item ' . $active . '"><a class="page-link" href="?' . http_build_query(array_merge($query_params, ['page' => $i])) . '">' . $i . '</a></li>';
-                        }
-                        
-                        if ($end_page < $total_pages) {
-                            if ($end_page < $total_pages - 1) {
-                                echo '<li class="page-item disabled"><span class="page-link">...</span></li>';
-                            }
-                            echo '<li class="page-item"><a class="page-link" href="?' . http_build_query(array_merge($query_params, ['page' => $total_pages])) . '">' . $total_pages . '</a></li>';
-                        }
-                    ?>
-                    
-                    <!-- Selanjutnya -->
-                    <li class="page-item <?= ($page >= $total_pages) ? 'disabled' : '' ?>">
-                        <a class="page-link" href="?<?= http_build_query(array_merge($query_params, ['page' => $page + 1])) ?>">Selanjutnya</a>
-                    </li>
-                </ul>
-            </nav>
+                <?php 
+                    renderPagination($page, $total_pages, array_filter([
+                        'view' => $view_trash ? 'trash' : null,
+                        'search' => $search_query,
+                        'jenis' => $filter_jenis,
+                        'lokasi' => $filter_lokasi,
+                        'sort' => $sort,
+                        'order' => $order
+                    ]));
+                ?>
             <?php endif; ?>
         </div>
     </div>
@@ -570,7 +693,7 @@ require_once __DIR__ . '/../includes/header.php';
 <div class="modal fade" id="addToolModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
-      <form method="POST" action="">
+      <form method="POST" action="" enctype="multipart/form-data">
           <div class="modal-header">
             <h5 class="modal-title">Tambah Alat Baru</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -578,16 +701,21 @@ require_once __DIR__ . '/../includes/header.php';
           <div class="modal-body">
             <input type="hidden" name="type" value="tool">
             <input type="hidden" name="action" value="add">
+
             <div class="mb-3">
-                <label>Kode Barang</label>
+                <label class="form-label">Kode Barang</label>
                 <input type="text" name="kode" class="form-control">
             </div>
             <div class="mb-3">
-                <label>Nama Alat</label>
+                <label class="form-label">Nama Alat</label>
                 <input type="text" name="name" class="form-control" required>
             </div>
             <div class="mb-3">
-                <label>Jenis</label>
+                <label class="form-label">Foto Alat <small class="text-muted">(Opsional, Max 3MB: JPG, PNG, WEBP)</small></label>
+                <input type="file" name="image" class="form-control" accept="image/jpeg,image/png,image/webp,image/gif">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Jenis</label>
                 <select name="jenis" class="form-select">
                     <option value="">Pilih Jenis</option>
                     <?php foreach($list_jenis as $j): ?>
@@ -596,7 +724,7 @@ require_once __DIR__ . '/../includes/header.php';
                 </select>
             </div>
             <div class="mb-3">
-                <label>Lokasi</label>
+                <label class="form-label">Lokasi</label>
                 <select name="lokasi" class="form-select">
                     <option value="">Pilih Lokasi</option>
                     <?php foreach($list_lokasi as $l): ?>
@@ -605,12 +733,12 @@ require_once __DIR__ . '/../includes/header.php';
                 </select>
             </div>
             <div class="mb-3">
-                <label>Total Stok</label>
+                <label class="form-label">Total Stok</label>
                 <input type="number" name="stock" class="form-control" required min="0" value="1">
                 <small class="text-muted">Ketersediaan akan dihitung secara dinamis dari Total Stok dikurangi jumlah yang sedang dipinjam.</small>
             </div>
             <div class="mb-3">
-                <label>Kondisi</label>
+                <label class="form-label">Kondisi</label>
                 <select name="kondisi" class="form-select">
                     <option value="Baik">Baik</option>
                     <option value="Rusak Ringan">Rusak Ringan</option>
@@ -742,6 +870,21 @@ require_once __DIR__ . '/../includes/header.php';
         </div>
     </div>
   </div>
+<!-- Modal Preview Foto Alat (Ukuran Kecil) -->
+<div class="modal fade" id="toolPreviewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm modal-dialog-centered" style="max-width: 220px; margin: 1.75rem auto;">
+    <div class="modal-content shadow border-0" style="max-width: 220px;">
+      <div class="modal-header py-1 px-3 bg-light">
+        <h6 class="modal-title text-truncate fw-bold mb-0" id="toolPreviewTitle" style="font-size: 0.85rem;">Preview Alat</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" style="font-size: 0.7rem;"></button>
+      </div>
+      <div class="modal-body text-center p-3">
+        <div class="tool-small-preview-box mx-auto" style="width: 140px; height: 140px; max-width: 140px; max-height: 140px; border-radius: 8px; overflow: hidden; border: 1px solid #dee2e6; display: flex; align-items: center; justify-content: center; background: #f8f9fa;">
+          <img id="toolPreviewImg" src="" alt="Preview Alat" style="width: 140px; height: 140px; max-width: 140px; max-height: 140px; object-fit: cover; display: block;">
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
@@ -760,6 +903,21 @@ function editItem(type, id, currentName) {
         }
     }
 }
+
+// Modal preview gambar alat (ukuran kecil tetap)
+document.querySelectorAll('.btn-preview-tool').forEach(el => {
+    el.addEventListener('click', function() {
+        const imgUrl = this.getAttribute('data-img');
+        const name = this.getAttribute('data-name');
+        if (imgUrl) {
+            document.getElementById('toolPreviewImg').src = imgUrl;
+            document.getElementById('toolPreviewTitle').textContent = name || 'Preview Alat';
+            const modalEl = document.getElementById('toolPreviewModal');
+            const previewModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+            previewModal.show();
+        }
+    });
+});
 
 document.querySelectorAll('.toggle-active').forEach(item => {
     item.addEventListener('change', function() {
