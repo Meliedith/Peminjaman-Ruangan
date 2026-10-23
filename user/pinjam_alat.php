@@ -248,8 +248,15 @@ require_once __DIR__ . '/../includes/header.php';
                 </div>
             </form>
             
-            <form method="POST" action="">
-                <h5 class="mb-3">Daftar Barang Tersedia</h5>
+            <form method="POST" action="" id="bookingForm">
+                <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+                    <h5 class="mb-0">Daftar Barang Tersedia</h5>
+                    <button type="button" class="btn btn-outline-primary btn-sm position-relative d-inline-flex align-items-center gap-2 shadow-sm" data-bs-toggle="modal" data-bs-target="#cartModal" id="btnHeaderCart">
+                        <span>🛒</span>
+                        <span class="fw-semibold">Keranjang Peminjaman</span>
+                        <span class="badge bg-danger rounded-pill" id="cartBadgeHeader">0</span>
+                    </button>
+                </div>
                 <div class="table-responsive mb-2">
                     <table class="table table-hover align-middle">
                         <thead class="table-light">
@@ -297,10 +304,20 @@ require_once __DIR__ . '/../includes/header.php';
                                     <button type="button" class="btn btn-sm btn-outline-primary btn-jadwal" data-id="<?= $t['id'] ?>" data-name="<?= htmlspecialchars($t['name']) ?>">🔍 Cek Jadwal</button>
                                 </td>
                                 <td>
-                                    <input type="checkbox" name="tools[<?= $t['id'] ?>][selected]" value="1" class="form-check-input tool-checkbox" data-id="<?= $t['id'] ?>">
+                                    <input type="checkbox" name="tools[<?= $t['id'] ?>][selected]" value="1" 
+                                           class="form-check-input tool-checkbox" 
+                                           data-id="<?= $t['id'] ?>"
+                                           data-name="<?= htmlspecialchars($t['name']) ?>"
+                                           data-jenis="<?= htmlspecialchars($t['jenis'] ?? '-') ?>"
+                                           data-stock="<?= (int)$t['total_stock'] ?>"
+                                           data-img="<?= htmlspecialchars($img_url ?: '') ?>">
                                 </td>
                                 <td>
-                                    <input type="number" name="tools[<?= $t['id'] ?>][quantity]" class="form-control form-control-sm tool-qty" id="qty_<?= $t['id'] ?>" min="1" max="<?= $t['total_stock'] ?>" disabled placeholder="Jml">
+                                    <input type="number" name="tools[<?= $t['id'] ?>][quantity]" 
+                                           class="form-control form-control-sm tool-qty" 
+                                           id="qty_<?= $t['id'] ?>" 
+                                           data-id="<?= $t['id'] ?>"
+                                           min="1" max="<?= $t['total_stock'] ?>" disabled placeholder="Jml">
                                 </td>
                             </tr>
                             <?php endforeach; ?>
@@ -321,6 +338,25 @@ require_once __DIR__ . '/../includes/header.php';
                     ?>
                 </div>
                 <?php endif; ?>
+
+                <!-- Ringkasan Keranjang Peminjaman -->
+                <div id="bookingDetailsSection" class="card border-primary border-opacity-25 bg-primary bg-opacity-10 mb-4 p-3 rounded-3 shadow-sm">
+                    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="fs-4">🛒</span>
+                            <div>
+                                <strong class="text-primary d-block">Barang di Keranjang Peminjaman:</strong>
+                                <span id="cartSummaryText" class="small text-secondary">Belum ada barang dipilih.</span>
+                            </div>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-danger" id="btnClearCartSummary" style="display: none;">Kosongkan</button>
+                            <button type="button" class="btn btn-sm btn-primary shadow-sm" data-bs-toggle="modal" data-bs-target="#cartModal">
+                                🔍 Buka Keranjang (<span id="cartSummaryBadge">0</span>)
+                            </button>
+                        </div>
+                    </div>
+                </div>
 
                 <div class="mb-4">
                     <label class="form-label d-block fw-bold">Pilihan Tipe Peminjaman</label>
@@ -473,6 +509,78 @@ require_once __DIR__ . '/../includes/header.php';
   </div>
 </div>
 
+<!-- Floating Cart Button -->
+<div id="floatingCartBtn" class="position-fixed bottom-0 end-0 p-3" style="z-index: 1050; display: none;">
+    <button type="button" class="btn btn-primary rounded-pill shadow-lg px-3 py-2 d-flex align-items-center gap-2 border-2 border-white" data-bs-toggle="modal" data-bs-target="#cartModal">
+        <span class="fs-5">🛒</span>
+        <span class="fw-bold">Keranjang</span>
+        <span class="badge bg-danger rounded-pill fs-7" id="floatingCartBadge">0</span>
+    </button>
+</div>
+
+<!-- Modal Keranjang Peminjaman -->
+<div class="modal fade" id="cartModal" tabindex="-1" aria-labelledby="cartModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title d-flex align-items-center gap-2" id="cartModalLabel">
+            <span>🛒</span>
+            <span>Keranjang Peminjaman Alat</span>
+            <span class="badge bg-light text-primary rounded-pill ms-2" id="modalCartCountBadge">0 Alat</span>
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-3 p-md-4">
+        <div id="cartEmptyState" class="text-center py-5" style="display: none;">
+            <div class="display-3 text-muted mb-3 opacity-50">🛒</div>
+            <h5 class="text-secondary fw-bold">Keranjang Masih Kosong</h5>
+            <p class="text-muted small mb-3">Silakan centang alat yang ingin dipinjam pada tabel daftar barang.<br>Barang yang Anda pilih akan tetap tersimpan meskipun Anda berpindah halaman atau mencari alat lain.</p>
+            <button type="button" class="btn btn-sm btn-primary" data-bs-dismiss="modal">Pilih Alat Sekarang</button>
+        </div>
+
+        <div id="cartContentWrapper">
+            <div class="alert alert-info py-2 px-3 small border-info d-flex align-items-center gap-2 mb-3">
+                <span class="fs-5">💡</span>
+                <div>
+                    Semua barang di keranjang ini akan diajukan sekaligus dalam satu jadwal peminjaman. Anda dapat mengubah jumlah pinjam atau menghapus alat sebelum mengajukan.
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 55px;" class="text-center">Foto</th>
+                            <th>Nama Alat</th>
+                            <th style="width: 100px;">Stok</th>
+                            <th style="width: 140px;">Jumlah Pinjam</th>
+                            <th style="width: 60px;" class="text-center">Hapus</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cartTableBody">
+                        <!-- Populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+      </div>
+      <div class="modal-footer bg-light d-flex justify-content-between align-items-center">
+        <div>
+            <button type="button" class="btn btn-outline-danger btn-sm" id="modalClearCartBtn" style="display: none;">
+                🗑 Kosongkan Keranjang
+            </button>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <span class="fw-semibold text-secondary small me-2" id="modalCartTotalUnits">Total: 0 unit</span>
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Tutup</button>
+            <button type="button" class="btn btn-success btn-sm" data-bs-dismiss="modal" id="btnModalProceed">
+                Lanjut ke Jadwal &rarr;
+            </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Auto-dismiss ONLY success flash messages after 5 seconds (keep error messages visible for user to read)
@@ -482,9 +590,281 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }, 5000);
 
-    // Toggle Quantity Input based on Checkbox
+    // ==========================================
+    // MANAJEMEN KERANJANG PEMINJAMAN ALAT
+    // ==========================================
+    const USER_ID = <?= (int)$_SESSION['user_id'] ?>;
+    const CART_STORAGE_KEY = 'pinjam_alat_cart_' + USER_ID;
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function getCart() {
+        try {
+            const raw = sessionStorage.getItem(CART_STORAGE_KEY);
+            return raw ? JSON.parse(raw) : {};
+        } catch (e) {
+            return {};
+        }
+    }
+
+    function saveCart(cart) {
+        try {
+            sessionStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
+        } catch (e) {}
+        renderCart();
+    }
+
+    function clearCart() {
+        try {
+            sessionStorage.removeItem(CART_STORAGE_KEY);
+        } catch (e) {}
+        
+        // Uncheck all items on current page
+        document.querySelectorAll('.tool-checkbox').forEach(cb => {
+            cb.checked = false;
+            const id = cb.getAttribute('data-id');
+            const qtyInput = document.getElementById('qty_' + id);
+            if (qtyInput) {
+                qtyInput.disabled = true;
+                qtyInput.required = false;
+                qtyInput.value = '';
+            }
+        });
+
+        renderCart();
+    }
+
+    function setCartItem(id, name, jenis, stock, img, quantity) {
+        const cart = getCart();
+        let qty = parseInt(quantity, 10);
+        const maxStock = parseInt(stock, 10) || 1;
+        if (isNaN(qty) || qty <= 0) qty = 1;
+        if (qty > maxStock) qty = maxStock;
+
+        cart[id] = {
+            id: String(id),
+            name: name || 'Alat',
+            jenis: jenis || '-',
+            stock: maxStock,
+            img: img || '',
+            quantity: qty
+        };
+        saveCart(cart);
+    }
+
+    function removeFromCart(id) {
+        const cart = getCart();
+        delete cart[id];
+        saveCart(cart);
+
+        // If currently visible on page, uncheck and disable
+        const cb = document.querySelector(`.tool-checkbox[data-id="${id}"]`);
+        if (cb) {
+            cb.checked = false;
+            const qtyInput = document.getElementById('qty_' + id);
+            if (qtyInput) {
+                qtyInput.disabled = true;
+                qtyInput.required = false;
+                qtyInput.value = '';
+            }
+        }
+    }
+
+    function renderCart() {
+        const cart = getCart();
+        const ids = Object.keys(cart);
+        const count = ids.length;
+        let totalUnits = 0;
+        ids.forEach(id => {
+            totalUnits += parseInt(cart[id].quantity, 10) || 0;
+        });
+
+        // Update badges
+        const badgeHeader = document.getElementById('cartBadgeHeader');
+        if (badgeHeader) badgeHeader.textContent = count;
+        
+        const floatingBadge = document.getElementById('floatingCartBadge');
+        if (floatingBadge) floatingBadge.textContent = count;
+
+        const floatingBtn = document.getElementById('floatingCartBtn');
+        if (floatingBtn) {
+            floatingBtn.style.display = count > 0 ? 'block' : 'none';
+        }
+
+        const summaryBadge = document.getElementById('cartSummaryBadge');
+        if (summaryBadge) summaryBadge.textContent = count;
+
+        const modalCountBadge = document.getElementById('modalCartCountBadge');
+        if (modalCountBadge) modalCountBadge.textContent = `${count} Alat`;
+
+        const modalUnits = document.getElementById('modalCartTotalUnits');
+        if (modalUnits) modalUnits.textContent = `Total: ${totalUnits} unit`;
+
+        // Summary text
+        const summaryText = document.getElementById('cartSummaryText');
+        const btnClearSummary = document.getElementById('btnClearCartSummary');
+        if (summaryText) {
+            if (count === 0) {
+                summaryText.textContent = 'Belum ada barang dipilih.';
+                if (btnClearSummary) btnClearSummary.style.display = 'none';
+            } else {
+                summaryText.innerHTML = `<strong>${count} jenis alat</strong> (${totalUnits} unit) siap diajukan.`;
+                if (btnClearSummary) btnClearSummary.style.display = 'inline-block';
+            }
+        }
+
+        // Modal Clear Button
+        const modalClearBtn = document.getElementById('modalClearCartBtn');
+        if (modalClearBtn) {
+            modalClearBtn.style.display = count > 0 ? 'inline-block' : 'none';
+        }
+
+        // Render Modal Table
+        const emptyState = document.getElementById('cartEmptyState');
+        const contentWrapper = document.getElementById('cartContentWrapper');
+        const tbody = document.getElementById('cartTableBody');
+
+        if (count === 0) {
+            if (emptyState) emptyState.style.display = 'block';
+            if (contentWrapper) contentWrapper.style.display = 'none';
+            if (tbody) tbody.innerHTML = '';
+        } else {
+            if (emptyState) emptyState.style.display = 'none';
+            if (contentWrapper) contentWrapper.style.display = 'block';
+
+            if (tbody) {
+                tbody.innerHTML = '';
+                ids.forEach(id => {
+                    const item = cart[id];
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="text-center align-middle">
+                            ${item.img ? `<img src="${escapeHtml(item.img)}" style="width: 42px; height: 42px; object-fit: cover; border-radius: 6px; border: 1px solid #dee2e6;">` : `<span style="width: 42px; height: 42px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; border: 1px dashed #ced4da; background: #f8f9fa; color: #adb5bd; font-size: 0.75rem;">-</span>`}
+                        </td>
+                        <td>
+                            <strong class="d-block text-dark">${escapeHtml(item.name)}</strong>
+                            <span class="text-muted small">${escapeHtml(item.jenis)}</span>
+                        </td>
+                        <td>
+                            <span class="badge bg-secondary">${item.stock} Unit</span>
+                        </td>
+                        <td>
+                            <div class="input-group input-group-sm" style="max-width: 125px;">
+                                <button type="button" class="btn btn-outline-secondary btn-cart-minus" data-id="${item.id}">-</button>
+                                <input type="number" class="form-control text-center cart-qty-input" data-id="${item.id}" value="${item.quantity}" min="1" max="${item.stock}">
+                                <button type="button" class="btn btn-outline-secondary btn-cart-plus" data-id="${item.id}">+</button>
+                            </div>
+                        </td>
+                        <td class="text-center">
+                            <button type="button" class="btn btn-sm btn-outline-danger btn-cart-delete" data-id="${item.id}" title="Hapus alat ini dari keranjang">&times;</button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+    }
+
+    // Modal Table Event Delegation (Minus, Plus, Delete, Qty Change)
+    const cartTableBody = document.getElementById('cartTableBody');
+    if (cartTableBody) {
+        cartTableBody.addEventListener('click', function(e) {
+            const btnMinus = e.target.closest('.btn-cart-minus');
+            const btnPlus = e.target.closest('.btn-cart-plus');
+            const btnDelete = e.target.closest('.btn-cart-delete');
+
+            if (btnMinus) {
+                const id = btnMinus.getAttribute('data-id');
+                const cart = getCart();
+                if (cart[id]) {
+                    let qty = parseInt(cart[id].quantity, 10) - 1;
+                    if (qty < 1) qty = 1;
+                    cart[id].quantity = qty;
+                    saveCart(cart);
+                    const domQty = document.getElementById('qty_' + id);
+                    if (domQty) domQty.value = qty;
+                }
+            } else if (btnPlus) {
+                const id = btnPlus.getAttribute('data-id');
+                const cart = getCart();
+                if (cart[id]) {
+                    let qty = parseInt(cart[id].quantity, 10) + 1;
+                    if (qty > cart[id].stock) qty = cart[id].stock;
+                    cart[id].quantity = qty;
+                    saveCart(cart);
+                    const domQty = document.getElementById('qty_' + id);
+                    if (domQty) domQty.value = qty;
+                }
+            } else if (btnDelete) {
+                const id = btnDelete.getAttribute('data-id');
+                removeFromCart(id);
+            }
+        });
+
+        cartTableBody.addEventListener('change', function(e) {
+            const inputQty = e.target.closest('.cart-qty-input');
+            if (inputQty) {
+                const id = inputQty.getAttribute('data-id');
+                const cart = getCart();
+                if (cart[id]) {
+                    let qty = parseInt(inputQty.value, 10);
+                    if (isNaN(qty) || qty < 1) qty = 1;
+                    if (qty > cart[id].stock) qty = cart[id].stock;
+                    inputQty.value = qty;
+                    cart[id].quantity = qty;
+                    saveCart(cart);
+                    const domQty = document.getElementById('qty_' + id);
+                    if (domQty) domQty.value = qty;
+                }
+            }
+        });
+    }
+
+    // Clear cart confirmation
+    function confirmClearCart() {
+        if (confirm('Apakah Anda yakin ingin mengosongkan seluruh keranjang peminjaman alat?')) {
+            clearCart();
+        }
+    }
+    const modalClearBtn = document.getElementById('modalClearCartBtn');
+    if (modalClearBtn) modalClearBtn.addEventListener('click', confirmClearCart);
+    const summaryClearBtn = document.getElementById('btnClearCartSummary');
+    if (summaryClearBtn) summaryClearBtn.addEventListener('click', confirmClearCart);
+
+    // Proceed from modal to booking details
+    const btnModalProceed = document.getElementById('btnModalProceed');
+    if (btnModalProceed) {
+        btnModalProceed.addEventListener('click', function() {
+            const sec = document.getElementById('bookingDetailsSection');
+            if (sec) sec.scrollIntoView({ behavior: 'smooth' });
+        });
+    }
+
+    // Synchronize checkboxes and inputs on current page with cart
+    const initialCart = getCart();
     const checkboxes = document.querySelectorAll('.tool-checkbox');
     checkboxes.forEach(cb => {
+        const id = cb.getAttribute('data-id');
+        const qtyInput = document.getElementById('qty_' + id);
+        
+        // If already in cart, mark as checked and populate quantity
+        if (initialCart[id]) {
+            cb.checked = true;
+            if (qtyInput) {
+                qtyInput.disabled = false;
+                qtyInput.required = true;
+                qtyInput.value = initialCart[id].quantity;
+            }
+        }
+
         cb.addEventListener('change', function() {
             const id = this.getAttribute('data-id');
             const qtyInput = document.getElementById('qty_' + id);
@@ -492,13 +872,85 @@ document.addEventListener('DOMContentLoaded', function() {
                 qtyInput.disabled = false;
                 qtyInput.required = true;
                 if (!qtyInput.value) qtyInput.value = 1;
+
+                const name = this.getAttribute('data-name');
+                const jenis = this.getAttribute('data-jenis');
+                const stock = parseInt(this.getAttribute('data-stock'), 10) || 1;
+                const img = this.getAttribute('data-img') || '';
+                setCartItem(id, name, jenis, stock, img, qtyInput.value);
             } else {
                 qtyInput.disabled = true;
                 qtyInput.required = false;
                 qtyInput.value = '';
+                removeFromCart(id);
             }
         });
     });
+
+    // Quantity inputs inside table
+    document.querySelectorAll('.tool-qty').forEach(qtyInput => {
+        qtyInput.addEventListener('input', function() {
+            const id = this.getAttribute('data-id');
+            const cb = document.querySelector(`.tool-checkbox[data-id="${id}"]`);
+            if (cb && cb.checked) {
+                const name = cb.getAttribute('data-name');
+                const jenis = cb.getAttribute('data-jenis');
+                const stock = parseInt(cb.getAttribute('data-stock'), 10) || 1;
+                const img = cb.getAttribute('data-img') || '';
+                setCartItem(id, name, jenis, stock, img, this.value);
+            }
+        });
+    });
+
+    // Render initial Cart UI
+    renderCart();
+
+    // Form submit interception: Inject all items in cart before submitting
+    const bookingForm = document.getElementById('bookingForm');
+    if (bookingForm) {
+        bookingForm.addEventListener('submit', function(e) {
+            const cart = getCart();
+            const ids = Object.keys(cart);
+            
+            if (ids.length === 0) {
+                e.preventDefault();
+                alert('Keranjang peminjaman masih kosong! Silakan pilih minimal 1 barang terlebih dahulu.');
+                const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('cartModal'));
+                modal.show();
+                return false;
+            }
+
+            // Remove any previously injected inputs
+            document.querySelectorAll('.cart-injected-input').forEach(el => el.remove());
+
+            // Inject hidden inputs for all items in cart not currently present in table DOM
+            ids.forEach(id => {
+                const item = cart[id];
+                const domCb = document.querySelector(`.tool-checkbox[data-id="${id}"]`);
+                const domQty = document.getElementById('qty_' + id);
+
+                if (domCb && domQty) {
+                    domCb.checked = true;
+                    domQty.disabled = false;
+                    domQty.value = item.quantity;
+                } else {
+                    const hiddenSel = document.createElement('input');
+                    hiddenSel.type = 'hidden';
+                    hiddenSel.className = 'cart-injected-input';
+                    hiddenSel.name = `tools[${id}][selected]`;
+                    hiddenSel.value = '1';
+                    bookingForm.appendChild(hiddenSel);
+
+                    const hiddenQty = document.createElement('input');
+                    hiddenQty.type = 'hidden';
+                    hiddenQty.className = 'cart-injected-input';
+                    hiddenQty.name = `tools[${id}][quantity]`;
+                    hiddenQty.value = item.quantity;
+                    bookingForm.appendChild(hiddenQty);
+                }
+            });
+        });
+    }
 
     // Toggle Date Form based on Booking Type
     const typeRadios = document.querySelectorAll('.booking-type');

@@ -445,6 +445,12 @@ require_once __DIR__ . '/../includes/header.php';
             </div>
         </div>
     </div>
-</div>
+<?php if (isset($_SESSION['flash_message']) && strpos($_SESSION['flash_message']['message'], 'Pengajuan peminjaman alat berhasil') !== false): ?>
+<script>
+    try {
+        sessionStorage.removeItem('pinjam_alat_cart_' + <?= (int)$user_id ?>);
+    } catch(e) {}
+</script>
+<?php endif; ?>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
