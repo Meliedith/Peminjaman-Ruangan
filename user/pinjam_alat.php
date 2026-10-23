@@ -70,6 +70,80 @@ $tools = $stmt_tools->fetchAll();
 
 $slots = getTimeSlots(); // from functions.php
 
+function renderToolRows($tools) {
+    if (count($tools) === 0) {
+        return '<tr><td colspan="8" class="text-center py-4 text-muted">Tidak ada alat yang ditemukan.</td></tr>';
+    }
+    ob_start();
+    foreach($tools as $t): 
+        $img_url = getToolImageUrl($t['image'] ?? null);
+    ?>
+    <tr>
+        <td class="text-center align-middle" style="width: 55px; min-width: 55px; max-width: 55px;">
+            <?php if ($img_url): ?>
+                <img src="<?= $img_url ?>" alt="<?= htmlspecialchars($t['name']) ?>" class="tool-thumb btn-preview-tool" style="width: 44px; height: 44px; min-width: 44px; min-height: 44px; max-width: 44px; max-height: 44px; object-fit: cover; border-radius: 6px; cursor: pointer; display: inline-block; border: 1px solid #dee2e6;" data-img="<?= $img_url ?>" data-name="<?= htmlspecialchars($t['name']) ?>" title="Klik untuk lihat preview">
+            <?php else: ?>
+                <span class="tool-thumb-placeholder" style="width: 44px; height: 44px; min-width: 44px; min-height: 44px; max-width: 44px; max-height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; border: 1px dashed #ced4da; background: #f8f9fa; color: #adb5bd; font-size: 0.75rem;" title="Tidak ada foto">-</span>
+            <?php endif; ?>
+        </td>
+        <td><strong><?= htmlspecialchars($t['name']) ?></strong></td>
+        <td><?= htmlspecialchars($t['jenis'] ?? '-') ?></td>
+        <td><span class="badge bg-info text-dark"><?= htmlspecialchars($t['kondisi']) ?></span></td>
+        <td><?= $t['total_stock'] ?> Unit</td>
+        <td>
+            <button type="button" class="btn btn-sm btn-outline-primary btn-jadwal" data-id="<?= $t['id'] ?>" data-name="<?= htmlspecialchars($t['name']) ?>">🔍 Cek Jadwal</button>
+        </td>
+        <td>
+            <input type="checkbox" name="tools[<?= $t['id'] ?>][selected]" value="1" 
+                   class="form-check-input tool-checkbox" 
+                   data-id="<?= $t['id'] ?>"
+                   data-name="<?= htmlspecialchars($t['name']) ?>"
+                   data-jenis="<?= htmlspecialchars($t['jenis'] ?? '-') ?>"
+                   data-stock="<?= (int)$t['total_stock'] ?>"
+                   data-img="<?= htmlspecialchars($img_url ?: '') ?>">
+        </td>
+        <td>
+            <input type="number" name="tools[<?= $t['id'] ?>][quantity]" 
+                   class="form-control form-control-sm tool-qty" 
+                   id="qty_<?= $t['id'] ?>" 
+                   data-id="<?= $t['id'] ?>" 
+                   min="1" max="<?= $t['total_stock'] ?>" disabled placeholder="Jml">
+        </td>
+    </tr>
+    <?php endforeach;
+    return ob_get_clean();
+}
+
+function renderToolPaginationHtml($total_pages, $total_records, $count, $offset, $search_query, $filter_jenis, $sort, $page) {
+    if ($total_pages <= 1) return '';
+    ob_start();
+    ?>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+        <span class="text-muted small">Menampilkan <?= $count > 0 ? $offset + 1 : 0 ?> sampai <?= $offset + $count ?> dari <?= $total_records ?> alat</span>
+        <?php 
+            renderPagination($page, $total_pages, [
+                'search' => $search_query,
+                'jenis' => $filter_jenis,
+                'sort' => $sort
+            ]);
+        ?>
+    </div>
+    <?php
+    return ob_get_clean();
+}
+
+// Handle Live AJAX Search Request
+if (isset($_GET['ajax_search'])) {
+    header('Content-Type: application/json');
+    echo json_encode([
+        'tbody' => renderToolRows($tools),
+        'pagination' => renderToolPaginationHtml($total_pages, $total_records, count($tools), $offset, $search_query, $filter_jenis, $sort, $page),
+        'total_records' => $total_records,
+        'count' => count($tools)
+    ]);
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$has_phone) {
         setFlashMessage('danger', 'Anda wajib melengkapi nomor telepon di profil terlebih dahulu sebelum dapat mengajukan peminjaman alat lab.');
@@ -228,25 +302,27 @@ require_once __DIR__ . '/../includes/header.php';
                 </ul>
             </div>
             
-            <form method="GET" action="" class="row g-3 mb-4 bg-light p-3 rounded border">
-                <div class="col-md-6">
-                    <label class="form-label">Cari Nama Barang</label>
-                    <input type="text" name="search" class="form-control" placeholder="Ketik nama alat..." value="<?= htmlspecialchars($search_query) ?>">
+            <div class="row g-3 mb-4 bg-light p-3 rounded border align-items-center">
+                <div class="col-md-7">
+                    <label class="form-label fw-semibold">Cari Nama Barang</label>
+                    <div class="position-relative">
+                        <input type="text" name="search" id="searchInput" class="form-control pe-5" placeholder="Ketik nama alat untuk mencari otomatis..." value="<?= htmlspecialchars($search_query) ?>" autocomplete="off">
+                        <span id="searchSpinner" class="spinner-border spinner-border-sm text-primary position-absolute top-50 end-0 translate-middle-y me-3" style="display: none;"></span>
+                    </div>
                 </div>
                 <div class="col-md-4">
-                    <label class="form-label">Jenis Barang</label>
-                    <select name="jenis" class="form-select">
+                    <label class="form-label fw-semibold">Jenis Barang</label>
+                    <select name="jenis" id="filterJenis" class="form-select">
                         <option value="">Semua Jenis</option>
                         <?php foreach($list_jenis as $j): ?>
                             <option value="<?= htmlspecialchars($j['name']) ?>" <?= $filter_jenis === $j['name'] ? 'selected' : '' ?>><?= htmlspecialchars($j['name']) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-md-2 d-flex align-items-end">
-                    <button type="submit" class="btn btn-primary w-100 me-1">Cari</button>
-                    <a href="pinjam_alat.php" class="btn btn-outline-secondary">Reset</a>
+                <div class="col-md-1 d-flex align-items-end">
+                    <button type="button" id="btnResetSearch" class="btn btn-outline-secondary w-100" title="Reset Pencarian">Reset</button>
                 </div>
-            </form>
+            </div>
             
             <form method="POST" action="" id="bookingForm">
                 <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
@@ -281,63 +357,16 @@ require_once __DIR__ . '/../includes/header.php';
                                 <th style="width: 120px;">Jumlah</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            <?php if (count($tools) === 0): ?>
-                                <tr><td colspan="8" class="text-center">Tidak ada alat yang tersedia.</td></tr>
-                            <?php endif; ?>
-                            <?php foreach($tools as $t): 
-                                $img_url = getToolImageUrl($t['image'] ?? null);
-                            ?>
-                            <tr>
-                                <td class="text-center align-middle" style="width: 55px; min-width: 55px; max-width: 55px;">
-                                    <?php if ($img_url): ?>
-                                        <img src="<?= $img_url ?>" alt="<?= htmlspecialchars($t['name']) ?>" class="tool-thumb btn-preview-tool" style="width: 44px; height: 44px; min-width: 44px; min-height: 44px; max-width: 44px; max-height: 44px; object-fit: cover; border-radius: 6px; cursor: pointer; display: inline-block; border: 1px solid #dee2e6;" data-img="<?= $img_url ?>" data-name="<?= htmlspecialchars($t['name']) ?>" title="Klik untuk lihat preview">
-                                    <?php else: ?>
-                                        <span class="tool-thumb-placeholder" style="width: 44px; height: 44px; min-width: 44px; min-height: 44px; max-width: 44px; max-height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; border: 1px dashed #ced4da; background: #f8f9fa; color: #adb5bd; font-size: 0.75rem;" title="Tidak ada foto">-</span>
-                                    <?php endif; ?>
-                                </td>
-                                <td><strong><?= htmlspecialchars($t['name']) ?></strong></td>
-                                <td><?= htmlspecialchars($t['jenis'] ?? '-') ?></td>
-                                <td><span class="badge bg-info text-dark"><?= htmlspecialchars($t['kondisi']) ?></span></td>
-                                <td><?= $t['total_stock'] ?> Unit</td>
-                                <td>
-                                    <button type="button" class="btn btn-sm btn-outline-primary btn-jadwal" data-id="<?= $t['id'] ?>" data-name="<?= htmlspecialchars($t['name']) ?>">🔍 Cek Jadwal</button>
-                                </td>
-                                <td>
-                                    <input type="checkbox" name="tools[<?= $t['id'] ?>][selected]" value="1" 
-                                           class="form-check-input tool-checkbox" 
-                                           data-id="<?= $t['id'] ?>"
-                                           data-name="<?= htmlspecialchars($t['name']) ?>"
-                                           data-jenis="<?= htmlspecialchars($t['jenis'] ?? '-') ?>"
-                                           data-stock="<?= (int)$t['total_stock'] ?>"
-                                           data-img="<?= htmlspecialchars($img_url ?: '') ?>">
-                                </td>
-                                <td>
-                                    <input type="number" name="tools[<?= $t['id'] ?>][quantity]" 
-                                           class="form-control form-control-sm tool-qty" 
-                                           id="qty_<?= $t['id'] ?>" 
-                                           data-id="<?= $t['id'] ?>"
-                                           min="1" max="<?= $t['total_stock'] ?>" disabled placeholder="Jml">
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
+                        <tbody id="toolTableBody">
+                            <?= renderToolRows($tools) ?>
                         </tbody>
                     </table>
                 </div>
                 <small class="text-muted d-block mb-4">* Sisa stok riil pada tanggal/jam spesifik dapat dilihat melalui tombol <strong>🔍 Cek Jadwal</strong>.</small>
 
-                <?php if ($total_pages > 1): ?>
-                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
-                    <span class="text-muted small">Menampilkan <?= count($tools) > 0 ? $offset + 1 : 0 ?> sampai <?= $offset + count($tools) ?> dari <?= $total_records ?> alat</span>
-                    <?php 
-                        renderPagination($page, $total_pages, [
-                            'search' => $search_query,
-                            'jenis' => $filter_jenis,
-                            'sort' => $sort
-                        ]);
-                    ?>
+                <div id="toolPaginationWrapper">
+                    <?= renderToolPaginationHtml($total_pages, $total_records, count($tools), $offset, $search_query, $filter_jenis, $sort, $page) ?>
                 </div>
-                <?php endif; ?>
 
                 <!-- Ringkasan Keranjang Peminjaman -->
                 <div id="bookingDetailsSection" class="card border-primary border-opacity-25 bg-primary bg-opacity-10 mb-4 p-3 rounded-3 shadow-sm">
@@ -848,59 +877,205 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Current Sort param for live search
+    const currentSort = '<?= $sort ?>';
+
     // Synchronize checkboxes and inputs on current page with cart
-    const initialCart = getCart();
-    const checkboxes = document.querySelectorAll('.tool-checkbox');
-    checkboxes.forEach(cb => {
-        const id = cb.getAttribute('data-id');
-        const qtyInput = document.getElementById('qty_' + id);
-        
-        // If already in cart, mark as checked and populate quantity
-        if (initialCart[id]) {
-            cb.checked = true;
-            if (qtyInput) {
-                qtyInput.disabled = false;
-                qtyInput.required = true;
-                qtyInput.value = initialCart[id].quantity;
-            }
-        }
-
-        cb.addEventListener('change', function() {
-            const id = this.getAttribute('data-id');
+    function syncTableWithCart() {
+        const cart = getCart();
+        document.querySelectorAll('.tool-checkbox').forEach(cb => {
+            const id = cb.getAttribute('data-id');
             const qtyInput = document.getElementById('qty_' + id);
-            if (this.checked) {
-                qtyInput.disabled = false;
-                qtyInput.required = true;
-                if (!qtyInput.value) qtyInput.value = 1;
-
-                const name = this.getAttribute('data-name');
-                const jenis = this.getAttribute('data-jenis');
-                const stock = parseInt(this.getAttribute('data-stock'), 10) || 1;
-                const img = this.getAttribute('data-img') || '';
-                setCartItem(id, name, jenis, stock, img, qtyInput.value);
+            if (cart[id]) {
+                cb.checked = true;
+                if (qtyInput) {
+                    qtyInput.disabled = false;
+                    qtyInput.required = true;
+                    qtyInput.value = cart[id].quantity;
+                }
             } else {
-                qtyInput.disabled = true;
-                qtyInput.required = false;
-                qtyInput.value = '';
-                removeFromCart(id);
+                cb.checked = false;
+                if (qtyInput) {
+                    qtyInput.disabled = true;
+                    qtyInput.required = false;
+                    qtyInput.value = '';
+                }
             }
         });
-    });
+    }
 
-    // Quantity inputs inside table
-    document.querySelectorAll('.tool-qty').forEach(qtyInput => {
-        qtyInput.addEventListener('input', function() {
-            const id = this.getAttribute('data-id');
-            const cb = document.querySelector(`.tool-checkbox[data-id="${id}"]`);
-            if (cb && cb.checked) {
-                const name = cb.getAttribute('data-name');
-                const jenis = cb.getAttribute('data-jenis');
-                const stock = parseInt(cb.getAttribute('data-stock'), 10) || 1;
-                const img = cb.getAttribute('data-img') || '';
-                setCartItem(id, name, jenis, stock, img, this.value);
+    // Initial sync on page load
+    syncTableWithCart();
+
+    // Event Delegation on toolTableBody for Checkboxes, Qty Inputs, Jadwal, and Preview
+    const toolTableBody = document.getElementById('toolTableBody');
+    if (toolTableBody) {
+        // Checkbox toggle
+        toolTableBody.addEventListener('change', function(e) {
+            if (e.target.matches('.tool-checkbox')) {
+                const cb = e.target;
+                const id = cb.getAttribute('data-id');
+                const qtyInput = document.getElementById('qty_' + id);
+                if (cb.checked) {
+                    if (qtyInput) {
+                        qtyInput.disabled = false;
+                        qtyInput.required = true;
+                        if (!qtyInput.value) qtyInput.value = 1;
+                    }
+                    const name = cb.getAttribute('data-name');
+                    const jenis = cb.getAttribute('data-jenis');
+                    const stock = parseInt(cb.getAttribute('data-stock'), 10) || 1;
+                    const img = cb.getAttribute('data-img') || '';
+                    setCartItem(id, name, jenis, stock, img, qtyInput ? qtyInput.value : 1);
+                } else {
+                    if (qtyInput) {
+                        qtyInput.disabled = true;
+                        qtyInput.required = false;
+                        qtyInput.value = '';
+                    }
+                    removeFromCart(id);
+                }
             }
         });
-    });
+
+        // Quantity input in table
+        toolTableBody.addEventListener('input', function(e) {
+            if (e.target.matches('.tool-qty')) {
+                const qtyInput = e.target;
+                const id = qtyInput.getAttribute('data-id');
+                const cb = document.querySelector(`.tool-checkbox[data-id="${id}"]`);
+                if (cb && cb.checked) {
+                    const name = cb.getAttribute('data-name');
+                    const jenis = cb.getAttribute('data-jenis');
+                    const stock = parseInt(cb.getAttribute('data-stock'), 10) || 1;
+                    const img = cb.getAttribute('data-img') || '';
+                    setCartItem(id, name, jenis, stock, img, qtyInput.value);
+                }
+            }
+        });
+
+        // Click on Cek Jadwal and Preview tool
+        toolTableBody.addEventListener('click', function(e) {
+            const btnJadwal = e.target.closest('.btn-jadwal');
+            const btnPreview = e.target.closest('.btn-preview-tool');
+
+            if (btnJadwal) {
+                scheduleToolId.value = btnJadwal.getAttribute('data-id');
+                scheduleToolName.textContent = btnJadwal.getAttribute('data-name');
+                const today = new Date().toISOString().split('T')[0];
+                scheduleDate.value = today;
+                loadSchedule();
+                scheduleModal.show();
+            } else if (btnPreview) {
+                const imgUrl = btnPreview.getAttribute('data-img');
+                const name = btnPreview.getAttribute('data-name');
+                if (imgUrl) {
+                    document.getElementById('toolPreviewImg').src = imgUrl;
+                    document.getElementById('toolPreviewTitle').textContent = name || 'Preview Alat';
+                    const modalEl = document.getElementById('toolPreviewModal');
+                    const previewModal = bootstrap.Modal.getOrCreateInstance(modalEl);
+                    previewModal.show();
+                }
+            }
+        });
+    }
+
+    // Live Search Logic (Debounced input on search box)
+    let searchDebounceTimer = null;
+    const searchInput = document.getElementById('searchInput');
+    const filterJenis = document.getElementById('filterJenis');
+    const searchSpinner = document.getElementById('searchSpinner');
+    const btnResetSearch = document.getElementById('btnResetSearch');
+    const toolPaginationWrapper = document.getElementById('toolPaginationWrapper');
+
+    function doLiveSearch(page = 1) {
+        const query = searchInput ? searchInput.value.trim() : '';
+        const jenis = filterJenis ? filterJenis.value : '';
+        
+        if (searchSpinner) searchSpinner.style.display = 'inline-block';
+
+        const params = new URLSearchParams({
+            ajax_search: '1',
+            search: query,
+            jenis: jenis,
+            page: page,
+            sort: currentSort
+        });
+
+        fetch(`pinjam_alat.php?${params.toString()}`)
+            .then(res => res.json())
+            .then(data => {
+                if (toolTableBody) toolTableBody.innerHTML = data.tbody;
+                if (toolPaginationWrapper) toolPaginationWrapper.innerHTML = data.pagination;
+                
+                // Sync new rows with Cart
+                syncTableWithCart();
+
+                // Update browser URL without full reload
+                const urlParams = new URLSearchParams();
+                if (query) urlParams.set('search', query);
+                if (jenis) urlParams.set('jenis', jenis);
+                if (page > 1) urlParams.set('page', page);
+                if (currentSort !== 'ASC') urlParams.set('sort', currentSort);
+                const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
+                window.history.replaceState({}, '', newUrl);
+            })
+            .catch(err => {
+                console.error('Error in live search:', err);
+            })
+            .finally(() => {
+                if (searchSpinner) searchSpinner.style.display = 'none';
+            });
+    }
+
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            clearTimeout(searchDebounceTimer);
+            searchDebounceTimer = setTimeout(() => {
+                doLiveSearch(1);
+            }, 300);
+        });
+
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                clearTimeout(searchDebounceTimer);
+                doLiveSearch(1);
+            }
+        });
+    }
+
+    if (filterJenis) {
+        filterJenis.addEventListener('change', function() {
+            clearTimeout(searchDebounceTimer);
+            doLiveSearch(1);
+        });
+    }
+
+    if (btnResetSearch) {
+        btnResetSearch.addEventListener('click', function() {
+            if (searchInput) searchInput.value = '';
+            if (filterJenis) filterJenis.value = '';
+            clearTimeout(searchDebounceTimer);
+            doLiveSearch(1);
+        });
+    }
+
+    // Intercept Pagination Clicks for smooth AJAX paging
+    if (toolPaginationWrapper) {
+        toolPaginationWrapper.addEventListener('click', function(e) {
+            const link = e.target.closest('.page-link');
+            if (link && !link.closest('.disabled') && link.getAttribute('href') && link.getAttribute('href') !== '#') {
+                e.preventDefault();
+                const href = link.getAttribute('href');
+                const urlObj = new URL(href, window.location.href);
+                const page = urlObj.searchParams.get('page') || 1;
+                doLiveSearch(page);
+                const tableContainer = document.querySelector('.table-responsive');
+                if (tableContainer) tableContainer.scrollIntoView({ behavior: 'smooth' });
+            }
+        });
+    }
 
     // Render initial Cart UI
     renderCart();
@@ -1056,18 +1231,6 @@ document.addEventListener('DOMContentLoaded', function() {
         loadSchedule();
     });
 
-    document.querySelectorAll('.btn-jadwal').forEach(btn => {
-        btn.addEventListener('click', function() {
-            scheduleToolId.value = this.getAttribute('data-id');
-            scheduleToolName.textContent = this.getAttribute('data-name');
-            // reset date to today on open
-            const today = new Date().toISOString().split('T')[0];
-            scheduleDate.value = today;
-            loadSchedule();
-            scheduleModal.show();
-        });
-    });
-
     scheduleDate.addEventListener('change', loadSchedule);
 
     function loadSchedule() {
@@ -1122,21 +1285,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 scheduleContainer.innerHTML = '<div class="alert alert-danger w-100 text-center">Gagal memuat jadwal. Silakan coba lagi.</div>';
             });
     }
-
-    // Modal preview gambar alat (ukuran kecil tetap)
-    document.querySelectorAll('.btn-preview-tool').forEach(el => {
-        el.addEventListener('click', function() {
-            const imgUrl = this.getAttribute('data-img');
-            const name = this.getAttribute('data-name');
-            if (imgUrl) {
-                document.getElementById('toolPreviewImg').src = imgUrl;
-                document.getElementById('toolPreviewTitle').textContent = name || 'Preview Alat';
-                const modalEl = document.getElementById('toolPreviewModal');
-                const previewModal = bootstrap.Modal.getOrCreateInstance(modalEl);
-                previewModal.show();
-            }
-        });
-    });
 });
 </script>
 
