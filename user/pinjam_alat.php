@@ -538,14 +538,7 @@ require_once __DIR__ . '/../includes/header.php';
   </div>
 </div>
 
-<!-- Floating Cart Button -->
-<div id="floatingCartBtn" class="position-fixed bottom-0 end-0 p-3" style="z-index: 1050; display: none;">
-    <button type="button" class="btn btn-primary rounded-pill shadow-lg px-3 py-2 d-flex align-items-center gap-2 border-2 border-white" data-bs-toggle="modal" data-bs-target="#cartModal">
-        <span class="fs-5">🛒</span>
-        <span class="fw-bold">Keranjang</span>
-        <span class="badge bg-danger rounded-pill fs-7" id="floatingCartBadge">0</span>
-    </button>
-</div>
+
 
 <!-- Modal Keranjang Peminjaman -->
 <div class="modal fade" id="cartModal" tabindex="-1" aria-labelledby="cartModalLabel" aria-hidden="true">
@@ -720,13 +713,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const badgeHeader = document.getElementById('cartBadgeHeader');
         if (badgeHeader) badgeHeader.textContent = count;
         
-        const floatingBadge = document.getElementById('floatingCartBadge');
-        if (floatingBadge) floatingBadge.textContent = count;
 
-        const floatingBtn = document.getElementById('floatingCartBtn');
-        if (floatingBtn) {
-            floatingBtn.style.display = count > 0 ? 'block' : 'none';
-        }
 
         const summaryBadge = document.getElementById('cartSummaryBadge');
         if (summaryBadge) summaryBadge.textContent = count;
