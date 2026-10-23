@@ -138,7 +138,7 @@ if ($filter_type === 'daily') {
 if (isset($_GET['export']) && $_GET['export'] === 'xlsx') {
     require_once __DIR__ . '/../includes/libs/SimpleXLSXGen.php';
     $stmt_export = $pdo->prepare("
-        SELECT tb.*, u.name as user_name, u.nim, u.phone as user_phone, t.name as tool_name, t.kode as tool_code 
+        SELECT tb.*, u.name as user_name, u.email as user_email, u.phone as user_phone, t.name as tool_name, t.kode as tool_code 
         FROM tool_bookings tb 
         JOIN users u ON tb.user_id = u.id 
         JOIN tools t ON tb.tool_id = t.id 
@@ -149,7 +149,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'xlsx') {
     $rows = $stmt_export->fetchAll(PDO::FETCH_ASSOC);
 
     $excelData = [
-        ['<b>No</b>', '<b>Pemohon</b>', '<b>NIM</b>', '<b>No. HP</b>', '<b>Waktu Pengajuan</b>', '<b>Tanggal Mulai</b>', '<b>Tanggal Selesai</b>', '<b>Waktu/Durasi</b>', '<b>Barang</b>', '<b>Jumlah</b>', '<b>Status</b>', '<b>Alasan Penolakan</b>']
+        ['<b>No</b>', '<b>Pemohon</b>', '<b>Email</b>', '<b>No. HP</b>', '<b>Waktu Pengajuan</b>', '<b>Tanggal Mulai</b>', '<b>Tanggal Selesai</b>', '<b>Waktu/Durasi</b>', '<b>Barang</b>', '<b>Jumlah</b>', '<b>Status</b>', '<b>Alasan Penolakan</b>']
     ];
     $no = 1;
     foreach ($rows as $r) {
@@ -162,7 +162,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'xlsx') {
         $excelData[] = [
             $no++,
             $r['user_name'],
-            $r['nim'] ?? '-',
+            $r['user_email'] ?? '-',
             $r['user_phone'] ?? '-',
             date('d/m/Y H:i', strtotime($r['created_at'])),
             date('d/m/Y', strtotime($r['booking_date'])),

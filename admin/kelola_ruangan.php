@@ -168,7 +168,7 @@ if ($filter_type === 'daily') {
 if (isset($_GET['export']) && $_GET['export'] === 'xlsx') {
     require_once __DIR__ . '/../includes/libs/SimpleXLSXGen.php';
     $stmt_export = $pdo->prepare("
-        SELECT rb.*, u.name as user_name, u.nim, u.phone as user_phone, t.name as table_name 
+        SELECT rb.*, u.name as user_name, u.email as user_email, u.phone as user_phone, t.name as table_name 
         FROM room_bookings rb 
         JOIN users u ON rb.user_id = u.id 
         JOIN tables t ON rb.table_id = t.id 
@@ -179,14 +179,14 @@ if (isset($_GET['export']) && $_GET['export'] === 'xlsx') {
     $rows = $stmt_export->fetchAll(PDO::FETCH_ASSOC);
 
     $excelData = [
-        ['<b>No</b>', '<b>Pemohon</b>', '<b>NIM</b>', '<b>No. HP</b>', '<b>Waktu Pengajuan</b>', '<b>Tanggal Booking</b>', '<b>Jam Mulai</b>', '<b>Jam Selesai</b>', '<b>Meja</b>', '<b>Status</b>', '<b>Alasan Penolakan</b>']
+        ['<b>No</b>', '<b>Pemohon</b>', '<b>Email</b>', '<b>No. HP</b>', '<b>Waktu Pengajuan</b>', '<b>Tanggal Booking</b>', '<b>Jam Mulai</b>', '<b>Jam Selesai</b>', '<b>Meja</b>', '<b>Status</b>', '<b>Alasan Penolakan</b>']
     ];
     $no = 1;
     foreach ($rows as $r) {
         $excelData[] = [
             $no++,
             $r['user_name'],
-            $r['nim'] ?? '-',
+            $r['user_email'] ?? '-',
             $r['user_phone'] ?? '-',
             date('d/m/Y H:i', strtotime($r['created_at'])),
             date('d/m/Y', strtotime($r['booking_date'])),
