@@ -88,32 +88,134 @@ foreach ($pending_bookings as $b) {
     $grouped_pending[$key]['items'][] = $b;
 }
 
+// Filter configuration for history
+$filter_type = $_GET['filter_type'] ?? 'all';
+$selected_date = $_GET['date'] ?? date('Y-m-d');
+$selected_week = $_GET['week'] ?? date('Y-\WW');
+$selected_month = $_GET['month'] ?? date('Y-m');
+
+$history_filter_sql = "";
+$history_filter_params = [];
+$filter_label = "Keseluruhan";
+
+if ($filter_type === 'daily') {
+    if (!empty($selected_date)) {
+        $history_filter_sql = " AND (? BETWEEN tb.booking_date AND COALESCE(tb.end_date, tb.booking_date)) ";
+        $history_filter_params[] = $selected_date;
+        $filter_label = "Harian (" . date('d M Y', strtotime($selected_date)) . ")";
+    }
+} elseif ($filter_type === 'weekly') {
+    if (preg_match('/^(\d{4})-W(\d{2})$/', $selected_week, $matches)) {
+        $dto = new DateTime();
+        $dto->setISODate((int)$matches[1], (int)$matches[2], 1);
+        $week_start = $dto->format('Y-m-d');
+        $dto->setISODate((int)$matches[1], (int)$matches[2], 7);
+        $week_end = $dto->format('Y-m-d');
+    } else {
+        $week_start = date('Y-m-d', strtotime('monday this week'));
+        $week_end = date('Y-m-d', strtotime('sunday this week'));
+    }
+    $history_filter_sql = " AND (tb.booking_date <= ? AND COALESCE(tb.end_date, tb.booking_date) >= ?) ";
+    $history_filter_params[] = $week_end;
+    $history_filter_params[] = $week_start;
+    $filter_label = "Mingguan (" . date('d M Y', strtotime($week_start)) . " - " . date('d M Y', strtotime($week_end)) . ")";
+} elseif ($filter_type === 'monthly') {
+    if (preg_match('/^(\d{4})-(\d{2})$/', $selected_month)) {
+        $month_start = $selected_month . '-01';
+        $month_end = date('Y-m-t', strtotime($month_start));
+    } else {
+        $selected_month = date('Y-m');
+        $month_start = date('Y-m-01');
+        $month_end = date('Y-m-t');
+    }
+    $history_filter_sql = " AND (tb.booking_date <= ? AND COALESCE(tb.end_date, tb.booking_date) >= ?) ";
+    $history_filter_params[] = $month_end;
+    $history_filter_params[] = $month_start;
+    $filter_label = "Bulanan (" . date('F Y', strtotime($month_start)) . ")";
+}
+
+// Handle Export XLSX
+if (isset($_GET['export']) && $_GET['export'] === 'xlsx') {
+    require_once __DIR__ . '/../includes/libs/SimpleXLSXGen.php';
+    $stmt_export = $pdo->prepare("
+        SELECT tb.*, u.name as user_name, u.nim, u.phone as user_phone, t.name as tool_name, t.kode as tool_code 
+        FROM tool_bookings tb 
+        JOIN users u ON tb.user_id = u.id 
+        JOIN tools t ON tb.tool_id = t.id 
+        WHERE tb.status != 'pending' $history_filter_sql
+        ORDER BY tb.created_at DESC
+    ");
+    $stmt_export->execute($history_filter_params);
+    $rows = $stmt_export->fetchAll(PDO::FETCH_ASSOC);
+
+    $excelData = [
+        ['<b>No</b>', '<b>Pemohon</b>', '<b>NIM</b>', '<b>No. HP</b>', '<b>Waktu Pengajuan</b>', '<b>Tanggal Mulai</b>', '<b>Tanggal Selesai</b>', '<b>Waktu/Durasi</b>', '<b>Barang</b>', '<b>Jumlah</b>', '<b>Status</b>', '<b>Alasan Penolakan</b>']
+    ];
+    $no = 1;
+    foreach ($rows as $r) {
+        $end_date_str = (!empty($r['end_date']) && $r['end_date'] !== $r['booking_date']) ? date('d/m/Y', strtotime($r['end_date'])) : date('d/m/Y', strtotime($r['booking_date']));
+        if ($r['start_time'] === '00:00:00' && $r['end_time'] === '23:59:59') {
+            $jam_str = (!empty($r['end_date']) && $r['end_date'] !== $r['booking_date']) ? 'Rentang Waktu (24 Jam)' : 'Seharian (24 Jam)';
+        } else {
+            $jam_str = substr($r['start_time'], 0, 5) . ' - ' . substr($r['end_time'], 0, 5) . ' WIB';
+        }
+        $excelData[] = [
+            $no++,
+            $r['user_name'],
+            $r['nim'] ?? '-',
+            $r['user_phone'] ?? '-',
+            date('d/m/Y H:i', strtotime($r['created_at'])),
+            date('d/m/Y', strtotime($r['booking_date'])),
+            $end_date_str,
+            $jam_str,
+            $r['tool_name'],
+            (int)$r['quantity'],
+            ucfirst($r['status']),
+            $r['rejection_reason'] ?: '-'
+        ];
+    }
+    if (count($excelData) === 1) {
+        $excelData[] = ['-', '-', '-', '-', '-', 'Tidak ada data histori peminjaman alat untuk periode ini', '-', '-', '-', '-', '-', '-'];
+    }
+    $filter_tag = match($filter_type) {
+        'daily' => 'Harian_' . $selected_date,
+        'weekly' => 'Mingguan_' . str_replace('-', '_', $selected_week),
+        'monthly' => 'Bulanan_' . $selected_month,
+        default => 'Semua'
+    };
+    $xlsx = Shuchkin\SimpleXLSXGen::fromArray($excelData, 'Histori Peminjaman Alat');
+    $xlsx->downloadAs('Histori_Peminjaman_Alat_' . $filter_tag . '_' . date('Ymd_His') . '.xlsx');
+    exit;
+}
+
 // Pagination configuration for history
 $limit = 10;
 $history_page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
 $history_offset = ($history_page - 1) * $limit;
 
-$stmt_history_count = $pdo->query("
+$stmt_history_count = $pdo->prepare("
     SELECT COUNT(*) 
     FROM tool_bookings tb 
-    WHERE tb.status != 'pending'
+    WHERE tb.status != 'pending' $history_filter_sql
 ");
-$history_total_records = $stmt_history_count->fetchColumn();
-$history_total_pages = ceil($history_total_records / $limit);
+$stmt_history_count->execute($history_filter_params);
+$history_total_records = (int)$stmt_history_count->fetchColumn();
+$history_total_pages = max(1, ceil($history_total_records / $limit));
 
 // Fetch All Bookings (History)
-$stmt_history = $pdo->query("
+$stmt_history = $pdo->prepare("
     SELECT tb.*, u.name as user_name, u.phone as user_phone, t.name as tool_name 
     FROM tool_bookings tb 
     JOIN users u ON tb.user_id = u.id 
     JOIN tools t ON tb.tool_id = t.id 
-    WHERE tb.status != 'pending'
+    WHERE tb.status != 'pending' $history_filter_sql
     ORDER BY tb.created_at DESC
     LIMIT $limit OFFSET $history_offset
 ");
+$stmt_history->execute($history_filter_params);
 $history_bookings = $stmt_history->fetchAll();
 
-$active_tab = isset($_GET['page']) ? 'history' : 'pending';
+$active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'history') || isset($_GET['page']) || isset($_GET['filter_type']) ? 'history' : 'pending';
 
 require_once __DIR__ . '/../includes/header.php';
 ?>
@@ -289,6 +391,68 @@ require_once __DIR__ . '/../includes/header.php';
 
     <!-- History Bookings -->
     <div class="tab-pane fade <?= $active_tab === 'history' ? 'show active' : '' ?>" id="history" role="tabpanel">
+        <!-- Filter Card -->
+        <div class="card shadow-sm border-0 mb-3 bg-light">
+            <div class="card-body p-3">
+                <form method="GET" action="" id="historyFilterForm" class="row g-2 align-items-center">
+                    <input type="hidden" name="tab" value="history">
+                    
+                    <div class="col-12 col-md-auto">
+                        <label class="form-label mb-1 small fw-semibold text-muted d-block">Pilihan Riwayat:</label>
+                        <div class="btn-group btn-group-sm w-100" role="group">
+                            <input type="radio" class="btn-check" name="filter_type" id="filter_all" value="all" <?= $filter_type === 'all' ? 'checked' : '' ?> onchange="updateAdminFilterUI()">
+                            <label class="btn btn-outline-primary" for="filter_all">Keseluruhan</label>
+
+                            <input type="radio" class="btn-check" name="filter_type" id="filter_daily" value="daily" <?= $filter_type === 'daily' ? 'checked' : '' ?> onchange="updateAdminFilterUI()">
+                            <label class="btn btn-outline-primary" for="filter_daily">Harian</label>
+
+                            <input type="radio" class="btn-check" name="filter_type" id="filter_weekly" value="weekly" <?= $filter_type === 'weekly' ? 'checked' : '' ?> onchange="updateAdminFilterUI()">
+                            <label class="btn btn-outline-primary" for="filter_weekly">Mingguan</label>
+
+                            <input type="radio" class="btn-check" name="filter_type" id="filter_monthly" value="monthly" <?= $filter_type === 'monthly' ? 'checked' : '' ?> onchange="updateAdminFilterUI()">
+                            <label class="btn btn-outline-primary" for="filter_monthly">Bulanan</label>
+                        </div>
+                    </div>
+
+                    <!-- Input Date (Harian) -->
+                    <div class="col-12 col-md-auto filter-input-box" id="box_daily" style="<?= $filter_type === 'daily' ? '' : 'display:none;' ?>">
+                        <label class="form-label mb-1 small fw-semibold text-muted d-block">Pilih Tanggal:</label>
+                        <input type="date" name="date" class="form-control form-control-sm" value="<?= htmlspecialchars($selected_date) ?>">
+                    </div>
+
+                    <!-- Input Week (Mingguan) -->
+                    <div class="col-12 col-md-auto filter-input-box" id="box_weekly" style="<?= $filter_type === 'weekly' ? '' : 'display:none;' ?>">
+                        <label class="form-label mb-1 small fw-semibold text-muted d-block">Pilih Minggu:</label>
+                        <input type="week" name="week" class="form-control form-control-sm" value="<?= htmlspecialchars($selected_week) ?>">
+                    </div>
+
+                    <!-- Input Month (Bulanan) -->
+                    <div class="col-12 col-md-auto filter-input-box" id="box_monthly" style="<?= $filter_type === 'monthly' ? '' : 'display:none;' ?>">
+                        <label class="form-label mb-1 small fw-semibold text-muted d-block">Pilih Bulan:</label>
+                        <input type="month" name="month" class="form-control form-control-sm" value="<?= htmlspecialchars($selected_month) ?>">
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="col-12 col-md-auto d-flex align-items-end gap-1 mt-2 mt-md-4">
+                        <button type="submit" class="btn btn-sm btn-primary">
+                            <i class="bi bi-filter"></i> Terapkan
+                        </button>
+                        <a href="?tab=history" class="btn btn-sm btn-outline-secondary" title="Reset Filter">
+                            <i class="bi bi-arrow-counterclockwise"></i> Reset
+                        </a>
+                    </div>
+
+                    <!-- Export Button -->
+                    <div class="col-12 col-md d-flex justify-content-md-end align-items-end mt-2 mt-md-4">
+                        <a href="?export=xlsx&tab=history&filter_type=<?= $filter_type ?>&date=<?= urlencode($selected_date) ?>&week=<?= urlencode($selected_week) ?>&month=<?= urlencode($selected_month) ?>" 
+                           class="btn btn-sm btn-success d-inline-flex align-items-center gap-1 shadow-sm">
+                            <i class="bi bi-file-earmark-excel-fill"></i> Download XLSX
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+
         <div class="table-responsive bg-white shadow-sm rounded p-3">
             <table class="table table-hover align-middle">
                 <thead class="table-light">
@@ -304,7 +468,7 @@ require_once __DIR__ . '/../includes/header.php';
                 </thead>
                 <tbody>
                     <?php if(count($history_bookings) === 0): ?>
-                        <tr><td colspan="7" class="text-center">Belum ada histori.</td></tr>
+                        <tr><td colspan="7" class="text-center py-4 text-muted"><i class="bi bi-inbox fs-3 d-block mb-2"></i>Belum ada histori<?= $filter_type !== 'all' ? ' untuk periode (' . htmlspecialchars($filter_label) . ')' : '' ?>.</td></tr>
                     <?php else: ?>
                         <?php foreach($history_bookings as $b): ?>
                             <tr>
@@ -349,11 +513,24 @@ require_once __DIR__ . '/../includes/header.php';
             <?php if ($history_total_pages > 1): ?>
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
                 <span class="text-muted small">Menampilkan <?= count($history_bookings) > 0 ? $history_offset + 1 : 0 ?> sampai <?= $history_offset + count($history_bookings) ?> dari <?= $history_total_records ?> entri</span>
-                <?php renderPagination($history_page, $history_total_pages); ?>
+                <?php renderPagination($history_page, $history_total_pages, ['tab' => 'history', 'filter_type' => $filter_type, 'date' => $selected_date, 'week' => $selected_week, 'month' => $selected_month]); ?>
             </div>
             <?php endif; ?>
         </div>
     </div>
 </div>
+
+<script>
+function updateAdminFilterUI() {
+    const selected = document.querySelector('input[name="filter_type"]:checked')?.value || 'all';
+    const boxDaily = document.getElementById('box_daily');
+    const boxWeekly = document.getElementById('box_weekly');
+    const boxMonthly = document.getElementById('box_monthly');
+    
+    if (boxDaily) boxDaily.style.display = (selected === 'daily') ? 'block' : 'none';
+    if (boxWeekly) boxWeekly.style.display = (selected === 'weekly') ? 'block' : 'none';
+    if (boxMonthly) boxMonthly.style.display = (selected === 'monthly') ? 'block' : 'none';
+}
+</script>
 
 <?php require_once __DIR__ . '/../includes/footer.php'; ?>
