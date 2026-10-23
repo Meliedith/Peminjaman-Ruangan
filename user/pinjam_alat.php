@@ -56,7 +56,7 @@ $query = "
             FROM tool_bookings 
             WHERE tool_bookings.tool_id = tools.id 
             AND status = 'approved' 
-            AND booking_date = CURDATE() 
+            AND CURDATE() BETWEEN booking_date AND IFNULL(end_date, booking_date) 
             AND CURTIME() BETWEEN start_time AND end_time
         ) as current_borrowed
     FROM tools 
@@ -97,7 +97,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $end_time = '';
         
         $today = date('Y-m-d');
-        $max_date = date('Y-m-d', strtotime('+30 days'));
+        $max_date_harian = date('Y-m-d', strtotime('+30 days'));
+        $max_date_rentang = date('Y-m-d', strtotime('+1 year'));
 
         if ($booking_type === 'harian') {
             $booking_date = $_POST['booking_date'] ?? '';
@@ -105,8 +106,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $end_time = $_POST['end_time'] ?? '';
             $end_date = $booking_date;
             
-            if ($booking_date < $today || $booking_date > $max_date) {
-                setFlashMessage('danger', 'Tanggal booking harus hari ini atau maksimal 30 hari ke depan.');
+            if ($booking_date < $today || $booking_date > $max_date_harian) {
+                setFlashMessage('danger', 'Tanggal booking harian harus hari ini atau maksimal 30 hari ke depan.');
                 $valid = false;
             } elseif (date('N', strtotime($booking_date)) >= 6) {
                 setFlashMessage('danger', 'Peminjaman alat tidak diizinkan pada hari Sabtu dan Minggu.');
@@ -124,11 +125,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $start_time = '00:00:00';
             $end_time = '23:59:59';
             
-            if ($booking_date < $today || $booking_date > $max_date || $end_date < $today || $end_date > $max_date) {
-                setFlashMessage('danger', 'Tanggal booking harus hari ini atau maksimal 30 hari ke depan.');
+            if ($booking_date < $today || $booking_date > $max_date_rentang || $end_date < $today || $end_date > $max_date_rentang) {
+                setFlashMessage('danger', 'Tanggal peminjaman rentang waktu harus mulai hari ini hingga maksimal 1 tahun ke depan.');
                 $valid = false;
             } elseif ($booking_date > $end_date) {
-                setFlashMessage('danger', 'Tanggal mulai harus sebelum tanggal selesai.');
+                setFlashMessage('danger', 'Tanggal mulai tidak boleh lebih besar dari tanggal selesai.');
                 $valid = false;
             }
         }
@@ -223,7 +224,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <ul class="mb-0 ps-3 small text-secondary">
                     <li>Pengajuan yang berstatus <strong>Menunggu Persetujuan (Pending)</strong> sudah langsung mengunci kuota stok sementara agar tidak terjadi tabrakan peminjaman (<em>overbooking</em>).</li>
                     <li>Gunakan tombol <strong>🔍 Cek Jadwal</strong> di samping nama alat untuk melihat ketersediaan unit pada tanggal dan jam tertentu sebelum mengajukan.</li>
-                    <li>Pada mode <strong>Rentang Waktu</strong>, alat dipinjam secara penuh (24 jam/hari). Pastikan alat tersebut tersedia di seluruh tanggal dalam rentang tersebut.</li>
+                    <li>Pada mode <strong>Rentang Waktu</strong>, alat dipinjam secara penuh (24 jam/hari). Pastikan alat tersebut tersedia di seluruh tanggal dalam rentang tersebut (dapat dipinjam lebih dari 1 bulan hingga maksimal 1 tahun).</li>
                 </ul>
             </div>
             
@@ -374,18 +375,18 @@ require_once __DIR__ . '/../includes/header.php';
 
                 <div id="rentang_fields" class="bg-light p-3 rounded mb-4 border" style="display: none;">
                     <div class="alert alert-warning py-2 px-3 small mb-3 border-warning">
-                        <strong>Perhatian Mode Rentang Waktu:</strong> Peminjaman ini mengunci alat selama <strong>24 jam penuh per hari</strong> dari tanggal mulai s/d tanggal selesai. Jika ada pemohon lain yang meminjam di jam berapa pun pada rentang tanggal tersebut, pengajuan akan otomatis tertolak karena stok tidak mencukupi.
+                        <strong>Perhatian Mode Rentang Waktu:</strong> Peminjaman ini mengunci alat selama <strong>24 jam penuh per hari</strong> dari tanggal mulai s/d tanggal selesai (dapat dipinjam hingga maksimal 1 tahun untuk riset/proyek panjang). Jika ada pemohon lain yang meminjam di jam berapa pun pada rentang tanggal tersebut, pengajuan akan otomatis tertolak karena stok tidak mencukupi.
                     </div>
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label fw-semibold">Tanggal Mulai</label>
-                            <input type="date" name="start_date" class="form-control" onclick="this.showPicker()"
-                                   min="<?= date('Y-m-d') ?>" max="<?= date('Y-m-d', strtotime('+30 days')) ?>">
+                            <input type="date" name="start_date" id="start_date" class="form-control" onclick="this.showPicker()"
+                                   min="<?= date('Y-m-d') ?>" max="<?= date('Y-m-d', strtotime('+1 year')) ?>">
                         </div>
                         <div class="col-md-6 mb-3">
                             <label class="form-label fw-semibold">Tanggal Selesai</label>
-                            <input type="date" name="end_date" class="form-control" onclick="this.showPicker()"
-                                   min="<?= date('Y-m-d') ?>" max="<?= date('Y-m-d', strtotime('+30 days')) ?>">
+                            <input type="date" name="end_date" id="end_date" class="form-control" onclick="this.showPicker()"
+                                   min="<?= date('Y-m-d') ?>" max="<?= date('Y-m-d', strtotime('+1 year')) ?>">
                         </div>
                     </div>
                 </div>
@@ -531,6 +532,22 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initialize required fields
     updateFields();
+
+    // Auto update min attribute of end_date when start_date changes
+    const startDateInput = document.getElementById('start_date');
+    const endDateInput = document.getElementById('end_date');
+    if (startDateInput && endDateInput) {
+        startDateInput.addEventListener('change', function() {
+            if (this.value) {
+                endDateInput.min = this.value;
+                if (endDateInput.value && endDateInput.value < this.value) {
+                    endDateInput.value = this.value;
+                }
+            } else {
+                endDateInput.min = '<?= date('Y-m-d') ?>';
+            }
+        });
+    }
 
     // Schedule check logic
     const scheduleModal = new bootstrap.Modal(document.getElementById('scheduleModal'));

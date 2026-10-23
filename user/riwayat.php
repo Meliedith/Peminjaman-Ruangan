@@ -371,12 +371,17 @@ require_once __DIR__ . '/../includes/header.php';
                                             <div>
                                                 <strong><?= htmlspecialchars($group['booking_date']) ?></strong>
                                                 <?php if (!empty($group['end_date']) && $group['end_date'] !== $group['booking_date']): ?>
-                                                    <span class="text-muted small d-block">s/d <?= htmlspecialchars($group['end_date']) ?></span>
+                                                    <?php 
+                                                        $d1 = new DateTime($group['booking_date']);
+                                                        $d2 = new DateTime($group['end_date']);
+                                                        $diff_days = $d1->diff($d2)->days + 1;
+                                                    ?>
+                                                    <span class="text-muted small d-block">s/d <?= htmlspecialchars($group['end_date']) ?> (<?= $diff_days ?> hari)</span>
                                                 <?php endif; ?>
                                             </div>
                                             <div class="small mt-1">
                                                 <?php if ($group['start_time'] === '00:00:00' && $group['end_time'] === '23:59:59'): ?>
-                                                    <span class="badge bg-light text-dark border">Seharian (24 Jam)</span>
+                                                    <span class="badge bg-light text-dark border"><?= (!empty($group['end_date']) && $group['end_date'] !== $group['booking_date']) ? 'Rentang Waktu (24 Jam)' : 'Seharian (24 Jam)' ?></span>
                                                 <?php else: ?>
                                                     <span class="text-secondary"><?= htmlspecialchars(substr($group['start_time'], 0, 5)) ?> - <?= htmlspecialchars(substr($group['end_time'], 0, 5)) ?></span>
                                                 <?php endif; ?>

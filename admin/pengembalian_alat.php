@@ -124,7 +124,12 @@ require_once __DIR__ . '/../includes/header.php';
                             <td>
                                 <?= htmlspecialchars($b['booking_date']) ?>
                                 <?php if (!empty($b['end_date']) && $b['end_date'] !== $b['booking_date']): ?>
-                                    s/d <?= htmlspecialchars($b['end_date']) ?>
+                                    <?php 
+                                        $d1 = new DateTime($b['booking_date']);
+                                        $d2 = new DateTime($b['end_date']);
+                                        $diff_days = $d1->diff($d2)->days + 1;
+                                    ?>
+                                    <br><small class="text-muted">s/d <?= htmlspecialchars($b['end_date']) ?> (<?= $diff_days ?> hari)</small>
                                 <?php endif; ?>
                             </td>
                             <td>
@@ -175,7 +180,12 @@ require_once __DIR__ . '/../includes/header.php';
                                 <td>
                                     <?= htmlspecialchars($h['booking_date']) ?>
                                     <?php if (!empty($h['end_date']) && $h['end_date'] !== $h['booking_date']): ?>
-                                        s/d <?= htmlspecialchars($h['end_date']) ?>
+                                        <?php 
+                                            $d1 = new DateTime($h['booking_date']);
+                                            $d2 = new DateTime($h['end_date']);
+                                            $diff_days = $d1->diff($d2)->days + 1;
+                                        ?>
+                                        <br><small class="text-muted">s/d <?= htmlspecialchars($h['end_date']) ?> (<?= $diff_days ?> hari)</small>
                                     <?php endif; ?>
                                 </td>
                                 <td><?= htmlspecialchars($h['updated_at']) ?></td>

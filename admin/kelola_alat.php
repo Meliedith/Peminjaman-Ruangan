@@ -174,7 +174,12 @@ require_once __DIR__ . '/../includes/header.php';
                                 <td>
                                     <?= htmlspecialchars($group['booking_date']) ?>
                                     <?php if (!empty($group['end_date']) && $group['end_date'] !== $group['booking_date']): ?>
-                                        s/d <?= htmlspecialchars($group['end_date']) ?>
+                                        <?php 
+                                            $d1 = new DateTime($group['booking_date']);
+                                            $d2 = new DateTime($group['end_date']);
+                                            $diff_days = $d1->diff($d2)->days + 1;
+                                        ?>
+                                        <br><small class="text-muted">s/d <?= htmlspecialchars($group['end_date']) ?> (<?= $diff_days ?> hari)</small>
                                     <?php endif; ?>
                                 </td>
                                 <td>
@@ -223,7 +228,12 @@ require_once __DIR__ . '/../includes/header.php';
                                                             <strong>Waktu Pengajuan:</strong> <?= date('d M Y H:i', strtotime($group['created_at'])) ?> WIB<br>
                                                             <strong>Tanggal Booking:</strong> <?= htmlspecialchars($group['booking_date']) ?>
                                                             <?php if (!empty($group['end_date']) && $group['end_date'] !== $group['booking_date']): ?>
-                                                                s/d <?= htmlspecialchars($group['end_date']) ?>
+                                                                <?php 
+                                                                    $d1 = new DateTime($group['booking_date']);
+                                                                    $d2 = new DateTime($group['end_date']);
+                                                                    $diff_days = $d1->diff($d2)->days + 1;
+                                                                ?>
+                                                                s/d <?= htmlspecialchars($group['end_date']) ?> (<?= $diff_days ?> hari)
                                                             <?php endif; ?><br>
                                                             <strong>Waktu:</strong> 
                                                             <?php if ($group['start_time'] === '00:00:00' && $group['end_time'] === '23:59:59'): ?>
@@ -307,7 +317,12 @@ require_once __DIR__ . '/../includes/header.php';
                                 <td>
                                     <?= htmlspecialchars($b['booking_date']) ?>
                                     <?php if (!empty($b['end_date']) && $b['end_date'] !== $b['booking_date']): ?>
-                                        s/d <?= htmlspecialchars($b['end_date']) ?>
+                                        <?php 
+                                            $d1 = new DateTime($b['booking_date']);
+                                            $d2 = new DateTime($b['end_date']);
+                                            $diff_days = $d1->diff($d2)->days + 1;
+                                        ?>
+                                        <br><small class="text-muted">s/d <?= htmlspecialchars($b['end_date']) ?> (<?= $diff_days ?> hari)</small>
                                     <?php endif; ?>
                                 </td>
                                 <td><?= htmlspecialchars($b['tool_name']) ?></td>

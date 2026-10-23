@@ -341,7 +341,7 @@ $query = "
             FROM tool_bookings 
             WHERE tool_bookings.tool_id = tools.id 
             AND status = 'approved' 
-            AND booking_date = CURDATE() 
+            AND CURDATE() BETWEEN booking_date AND IFNULL(end_date, booking_date) 
             AND CURTIME() BETWEEN start_time AND end_time
         ) as current_borrowed
     FROM tools 

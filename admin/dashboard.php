@@ -29,7 +29,7 @@ $stmt_noshow = $pdo->prepare("
     UPDATE tool_bookings 
     SET status = 'no_show' 
     WHERE status = 'approved' 
-    AND (booking_date < CURDATE() OR (booking_date = CURDATE() AND end_time < CURTIME()))
+    AND (IFNULL(end_date, booking_date) < CURDATE() OR (IFNULL(end_date, booking_date) = CURDATE() AND end_time < CURTIME()))
 ");
 $stmt_noshow->execute();
 
