@@ -14,6 +14,17 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS tool_types (id INT AUTO_INCREMENT PRIMARY
 
 // Handle Tool Actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['type'])) {
+    if (!validateCsrfToken()) {
+        if (isset($_POST['action']) && $_POST['action'] === 'toggle_active') {
+            header('Content-Type: application/json');
+            http_response_code(403);
+            exit(json_encode(['success' => false, 'error' => 'CSRF token mismatch']));
+        }
+        setFlashMessage('danger', 'Sesi keamanan tidak valid (CSRF token mismatch). Silakan muat ulang halaman.');
+        redirect('/admin/master_data.php');
+        exit;
+    }
+
     if ($_POST['type'] === 'tool') {
         $action = $_POST['action'] ?? '';
     
@@ -147,7 +158,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['type'])) {
         $excelData = [];
         $excelData[] = ['Kode', 'Nama Barang', 'Jenis', 'Lokasi', 'Total Stok', 'Kondisi', 'Status Aktif (1/0)'];
         foreach ($data as $row) {
-            $excelData[] = [$row['kode'], $row['name'], $row['jenis'], $row['lokasi'], $row['total_stock'], $row['kondisi'], $row['is_active']];
+            $excelData[] = [
+                sanitizeExcelCell($row['kode']),
+                sanitizeExcelCell($row['name']),
+                sanitizeExcelCell($row['jenis']),
+                sanitizeExcelCell($row['lokasi']),
+                (int)$row['total_stock'],
+                sanitizeExcelCell($row['kondisi']),
+                (int)$row['is_active']
+            ];
         }
         
         $xlsx = Shuchkin\SimpleXLSXGen::fromArray($excelData);
@@ -385,6 +404,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <ul class="dropdown-menu">
                     <li>
                         <form method="POST" action="" class="m-0">
+                            <?= csrfField() ?>
                             <input type="hidden" name="type" value="tool">
                             <input type="hidden" name="action" value="export">
                             <button type="submit" class="dropdown-item">Export XLSX</button>
@@ -443,11 +463,13 @@ require_once __DIR__ . '/../includes/header.php';
     <?php if (!$view_trash): ?>
     <div class="d-flex mb-3 gap-2">
         <form method="POST" action="" onsubmit="return confirm('Yakin ingin mengaktifkan semua alat?');">
+            <?= csrfField() ?>
             <input type="hidden" name="type" value="tool">
             <input type="hidden" name="action" value="activate_all">
             <button type="submit" class="btn btn-sm btn-success"><i class="bi bi-check-circle"></i> Aktifkan Semua</button>
         </form>
         <form method="POST" action="" onsubmit="return confirm('Yakin ingin menonaktifkan semua alat?');">
+            <?= csrfField() ?>
             <input type="hidden" name="type" value="tool">
             <input type="hidden" name="action" value="deactivate_all">
             <button type="submit" class="btn btn-sm btn-secondary"><i class="bi bi-x-circle"></i> Nonaktifkan Semua</button>
@@ -553,6 +575,7 @@ require_once __DIR__ . '/../includes/header.php';
                                 <?php if (!$view_trash): ?>
                                     <button type="button" class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#editToolModal<?= $t['id'] ?>">Edit</button>
                                     <form method="POST" action="" class="d-inline" onsubmit="return confirm('Pindahkan alat ini ke Tempat Sampah (Soft Delete)? Alat tidak akan muncul di daftar, tetapi histori transaksi tetap aman.');">
+                                        <?= csrfField() ?>
                                         <input type="hidden" name="type" value="tool">
                                         <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="id" value="<?= $t['id'] ?>">
@@ -560,12 +583,14 @@ require_once __DIR__ . '/../includes/header.php';
                                     </form>
                                 <?php else: ?>
                                     <form method="POST" action="" class="d-inline" onsubmit="return confirm('Pulihkan alat ini kembali ke daftar aktif?');">
+                                        <?= csrfField() ?>
                                         <input type="hidden" name="type" value="tool">
                                         <input type="hidden" name="action" value="restore">
                                         <input type="hidden" name="id" value="<?= $t['id'] ?>">
                                         <button type="submit" class="btn btn-sm btn-success">♻️ Pulihkan</button>
                                     </form>
                                     <form method="POST" action="" class="d-inline" onsubmit="return confirm('Hapus permanen alat ini? PERHATIAN: Hanya berhasil jika alat belum pernah dipinjam!');">
+                                        <?= csrfField() ?>
                                         <input type="hidden" name="type" value="tool">
                                         <input type="hidden" name="action" value="force_delete">
                                         <input type="hidden" name="id" value="<?= $t['id'] ?>">
@@ -578,6 +603,7 @@ require_once __DIR__ . '/../includes/header.php';
                               <div class="modal-dialog">
                                 <div class="modal-content">
                                   <form method="POST" action="" enctype="multipart/form-data">
+                                      <?= csrfField() ?>
                                       <div class="modal-header">
                                         <h5 class="modal-title">Edit Alat</h5>
                                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -694,6 +720,7 @@ require_once __DIR__ . '/../includes/header.php';
   <div class="modal-dialog">
     <div class="modal-content">
       <form method="POST" action="" enctype="multipart/form-data">
+          <?= csrfField() ?>
           <div class="modal-header">
             <h5 class="modal-title">Tambah Alat Baru</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -763,6 +790,7 @@ require_once __DIR__ . '/../includes/header.php';
   <div class="modal-dialog">
     <div class="modal-content">
       <form method="POST" action="" enctype="multipart/form-data">
+          <?= csrfField() ?>
           <div class="modal-header">
             <h5 class="modal-title">Import Data Alat</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -794,12 +822,14 @@ require_once __DIR__ . '/../includes/header.php';
         </div>
         <div class="modal-body">
             <form method="POST" action="" class="d-flex mb-3">
+                <?= csrfField() ?>
                 <input type="hidden" name="type" value="lokasi">
                 <input type="hidden" name="action" value="add">
                 <input type="text" name="name" class="form-control me-2" placeholder="Nama Lokasi Baru" required>
                 <button type="submit" class="btn btn-primary">Tambah</button>
             </form>
             <form id="editLokasiForm" method="POST" action="" style="display:none;">
+                <?= csrfField() ?>
                 <input type="hidden" name="type" value="lokasi">
                 <input type="hidden" name="action" value="edit">
                 <input type="hidden" name="id" id="editLokasiId">
@@ -813,6 +843,7 @@ require_once __DIR__ . '/../includes/header.php';
                         <div class="d-flex">
                             <button type="button" class="btn btn-sm btn-warning me-1" onclick="editItem('lokasi', <?= $l['id'] ?>, '<?= htmlspecialchars(addslashes($l['name'])) ?>')">Edit</button>
                             <form method="POST" action="" class="m-0" onsubmit="return confirm('Hapus lokasi ini?');">
+                                <?= csrfField() ?>
                                 <input type="hidden" name="type" value="lokasi">
                                 <input type="hidden" name="action" value="delete">
                                 <input type="hidden" name="id" value="<?= $l['id'] ?>">
@@ -838,12 +869,14 @@ require_once __DIR__ . '/../includes/header.php';
         </div>
         <div class="modal-body">
             <form method="POST" action="" class="d-flex mb-3">
+                <?= csrfField() ?>
                 <input type="hidden" name="type" value="jenis">
                 <input type="hidden" name="action" value="add">
                 <input type="text" name="name" class="form-control me-2" placeholder="Nama Jenis Baru" required>
                 <button type="submit" class="btn btn-primary">Tambah</button>
             </form>
             <form id="editJenisForm" method="POST" action="" style="display:none;">
+                <?= csrfField() ?>
                 <input type="hidden" name="type" value="jenis">
                 <input type="hidden" name="action" value="edit">
                 <input type="hidden" name="id" id="editJenisId">
@@ -857,6 +890,7 @@ require_once __DIR__ . '/../includes/header.php';
                         <div class="d-flex">
                             <button type="button" class="btn btn-sm btn-warning me-1" onclick="editItem('jenis', <?= $j['id'] ?>, '<?= htmlspecialchars(addslashes($j['name'])) ?>')">Edit</button>
                             <form method="POST" action="" class="m-0" onsubmit="return confirm('Hapus jenis ini?');">
+                                <?= csrfField() ?>
                                 <input type="hidden" name="type" value="jenis">
                                 <input type="hidden" name="action" value="delete">
                                 <input type="hidden" name="id" value="<?= $j['id'] ?>">
@@ -932,6 +966,7 @@ document.querySelectorAll('.toggle-active').forEach(item => {
         formData.append('action', 'toggle_active');
         formData.append('id', id);
         formData.append('is_active', isActive);
+        formData.append('csrf_token', '<?= generateCsrfToken() ?>');
         
         fetch('', {
             method: 'POST',

@@ -49,23 +49,20 @@ foreach ($bookings as $b) {
     $color = ($status === 'approved') ? 'bg-danger text-white' : 'bg-warning text-dark';
     $label = ($status === 'approved') ? 'Terisi' : 'Menunggu';
 
-    // Mark the slots
-    $in_range = false;
     foreach ($slots as $idx => $slot) {
         if ($idx >= count($slots) - 1) continue;
         
-        if ($slot === $start) {
-            $in_range = true;
-        }
+        $slot_start = $slot;
+        $slot_end = $slots[$idx+1];
         
-        if ($in_range) {
-            $schedule[$slot]['status'] = $status;
-            $schedule[$slot]['label'] = $label;
-            $schedule[$slot]['color'] = $color;
-        }
-        
-        if ($slots[$idx+1] === $end) {
-            $in_range = false;
+        // Slot overlaps booking if slot_start < end AND slot_end > start
+        if ($slot_start < $end && $slot_end > $start) {
+            // Approved takes precedence over pending
+            if ($schedule[$slot]['status'] !== 'approved' || $status === 'approved') {
+                $schedule[$slot]['status'] = $status;
+                $schedule[$slot]['label'] = $label;
+                $schedule[$slot]['color'] = $color;
+            }
         }
     }
 }

@@ -20,6 +20,11 @@ $tables = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $slots = getTimeSlots(); // from functions.php
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!validateCsrfToken()) {
+        setFlashMessage('danger', 'Sesi keamanan tidak valid (CSRF token mismatch). Silakan muat ulang halaman.');
+        redirect('/user/pinjam_ruangan.php');
+    }
+
     if (!$has_phone) {
         setFlashMessage('danger', 'Anda wajib melengkapi nomor telepon di profil terlebih dahulu sebelum dapat mengajukan peminjaman meja.');
         redirect('/profile.php?redirect=pinjam_ruangan');
@@ -35,6 +40,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $booking_date = $_POST['booking_date'] ?? '';
     $start_time = $_POST['start_time'] ?? '';
     $end_time = $_POST['end_time'] ?? '';
+    $project_name = trim($_POST['project_name'] ?? '');
+    $dosen_pembimbing = trim($_POST['dosen_pembimbing'] ?? '');
 
     // Basic Validation
     $today = date('Y-m-d');
@@ -42,8 +49,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($table_ids)) {
         setFlashMessage('danger', 'Silakan pilih minimal 1 meja pada denah.');
+    } elseif (empty($project_name)) {
+        setFlashMessage('danger', 'Nama / judul project wajib diisi.');
+    } elseif (empty($dosen_pembimbing)) {
+        setFlashMessage('danger', 'Nama dosen pembimbing wajib diisi.');
     } elseif ($booking_date < $today || $booking_date > $max_date) {
-        setFlashMessage('danger', 'Tanggal booking harus hari ini atau maksimal 30 hari ke depan.');
+        setFlashMessage('danger', 'Tanggal pinjam harus hari ini atau maksimal 30 hari ke depan.');
     } elseif (date('N', strtotime($booking_date)) >= 6) {
         setFlashMessage('danger', 'Peminjaman ruangan tidak diizinkan pada hari Sabtu dan Minggu.');
     } elseif ($start_time >= $end_time) {
@@ -76,11 +87,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->beginTransaction();
                 $now = date('Y-m-d H:i:s');
                 $stmt_insert = $pdo->prepare("
-                    INSERT INTO room_bookings (user_id, table_id, booking_date, start_time, end_time, status, created_at)
-                    VALUES (?, ?, ?, ?, ?, 'pending', ?)
+                    INSERT INTO room_bookings (user_id, table_id, booking_date, start_time, end_time, project_name, dosen_pembimbing, status, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
                 ");
                 foreach ($table_ids as $tid) {
-                    $stmt_insert->execute([$_SESSION['user_id'], $tid, $booking_date, $start_time, $end_time, $now]);
+                    $stmt_insert->execute([$_SESSION['user_id'], $tid, $booking_date, $start_time, $end_time, $project_name, $dosen_pembimbing, $now]);
                 }
                 $pdo->commit();
                 $count = count($table_ids);
@@ -454,6 +465,7 @@ require_once __DIR__ . '/../includes/header.php';
             </div>
 
             <form method="POST" action="" id="booking-form">
+                <?= csrfField() ?>
                 <!-- Hidden Inputs container for table_ids[] -->
                 <div id="hidden-table-inputs">
                     <input type="hidden" name="table_ids[]" value="1">
@@ -479,7 +491,7 @@ require_once __DIR__ . '/../includes/header.php';
                     </div>
                 </div>
 
-                <!-- Tanggal Booking -->
+                <!-- Tanggal Pinjam -->
                 <div class="mb-3">
                     <label class="form-label fw-bold">Tanggal Peminjaman</label>
                     <input type="date" name="booking_date" id="booking_date_input" class="form-control" required onclick="this.showPicker()"
@@ -511,6 +523,22 @@ require_once __DIR__ . '/../includes/header.php';
                             <?php endforeach; ?>
                         </select>
                     </div>
+                </div>
+
+                <!-- Nama / Judul Project -->
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Nama / Judul Project <span class="text-danger">*</span></label>
+                    <input type="text" name="project_name" id="project_name_input" class="form-control" required 
+                           value="<?= htmlspecialchars($_POST['project_name'] ?? '') ?>">
+                    <div class="form-text small">Jelaskan kegiatan atau project apa yang dikerjakan di lab.</div>
+                </div>
+
+                <!-- Dosen Pembimbing -->
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Dosen Pembimbing <span class="text-danger">*</span></label>
+                    <input type="text" name="dosen_pembimbing" id="dosen_pembimbing_input" class="form-control" required 
+                           value="<?= htmlspecialchars($_POST['dosen_pembimbing'] ?? '') ?>">
+                    <div class="form-text small">Nama dosen pembimbing project / praktikum / tugas akhir Anda.</div>
                 </div>
 
                 <div class="alert <?= $has_phone ? 'alert-light border' : 'alert-danger' ?> small mb-3 p-2 px-3 rounded-2">

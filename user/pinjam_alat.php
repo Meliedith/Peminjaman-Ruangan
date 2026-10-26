@@ -145,6 +145,11 @@ if (isset($_GET['ajax_search'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!validateCsrfToken()) {
+        setFlashMessage('danger', 'Sesi keamanan tidak valid (CSRF token mismatch). Silakan muat ulang halaman.');
+        redirect('/user/pinjam_alat.php');
+    }
+
     if (!$has_phone) {
         setFlashMessage('danger', 'Anda wajib melengkapi nomor telepon di profil terlebih dahulu sebelum dapat mengajukan peminjaman alat lab.');
         redirect('/profile.php?redirect=pinjam_alat');
@@ -181,7 +186,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $end_date = $booking_date;
             
             if ($booking_date < $today || $booking_date > $max_date_harian) {
-                setFlashMessage('danger', 'Tanggal booking harian harus hari ini atau maksimal 30 hari ke depan.');
+                setFlashMessage('danger', 'Tanggal pinjam harian harus hari ini atau maksimal 30 hari ke depan.');
                 $valid = false;
             } elseif (date('N', strtotime($booking_date)) >= 6) {
                 setFlashMessage('danger', 'Peminjaman alat tidak diizinkan pada hari Sabtu dan Minggu.');
@@ -260,7 +265,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $pdo->commit();
                     setFlashMessage('success', 'Pengajuan peminjaman alat berhasil dikirim dan menunggu persetujuan.');
-                    redirect('/user/riwayat.php');
+                    redirect('/user/riwayat.php?tab=tool');
                 }
             } catch (Exception $e) {
                 $pdo->rollBack();
@@ -325,6 +330,7 @@ require_once __DIR__ . '/../includes/header.php';
             </div>
             
             <form method="POST" action="" id="bookingForm">
+                <?= csrfField() ?>
                 <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
                     <h5 class="mb-0">Daftar Barang Tersedia</h5>
                     <button type="button" class="btn btn-outline-primary btn-sm position-relative d-inline-flex align-items-center gap-2 shadow-sm" data-bs-toggle="modal" data-bs-target="#cartModal" id="btnHeaderCart">
@@ -1111,6 +1117,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     bookingForm.appendChild(hiddenQty);
                 }
             });
+
+            // Auto-clear cart storage upon submitting loan request
+            try {
+                sessionStorage.removeItem(CART_STORAGE_KEY);
+            } catch (err) {}
         });
     }
 

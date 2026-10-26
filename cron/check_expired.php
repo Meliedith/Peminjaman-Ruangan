@@ -5,6 +5,17 @@
 
 require_once __DIR__ . '/../config/database.php';
 
+// Access control: allow CLI execution or authenticated HTTP request with secret token
+if (php_sapi_name() !== 'cli') {
+    $expected_token = getenv('CRON_SECRET_TOKEN') ?: 'peminjaman_cron_secret_key_2024';
+    $given_token = $_GET['token'] ?? '';
+    if (empty($given_token) || !hash_equals($expected_token, $given_token)) {
+        http_response_code(403);
+        header('Content-Type: text/plain');
+        exit("403 Forbidden: Akses tidak diizinkan. Script ini hanya dapat dijalankan melalui CLI atau dengan token rahasia yang valid.");
+    }
+}
+
 echo "Running expiration check...\n";
 
 try {

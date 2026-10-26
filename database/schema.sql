@@ -7,6 +7,8 @@ DROP TABLE IF EXISTS room_bookings;
 DROP TABLE IF EXISTS tools;
 DROP TABLE IF EXISTS tables;
 DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS tool_types;
+DROP TABLE IF EXISTS tool_locations;
 
 -- 1. Table users
 CREATE TABLE users (
@@ -20,10 +22,10 @@ CREATE TABLE users (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
--- Seed initial Admin user (Password: admin123)
--- The password needs to be hashed. Using default PHP password_hash for 'admin123'
+-- Seed initial Admin users
 INSERT INTO users (name, email, password, role) VALUES 
-('Administrator', 'admin@lab.com', '$2y$10$4t2A3Fwn5uyevWMJmMTkjejKmpx3KOCRCv7nMFSgwxuEF/Oc0DeZS', 'admin');
+('Administrator', 'admin@lab.com', '$2y$10$4t2A3Fwn5uyevWMJmMTkjejKmpx3KOCRCv7nMFSgwxuEF/Oc0DeZS', 'admin'),
+('Sapto', 'sapto@unika.ac.id', '', 'admin');
 
 
 -- 2. Table tables (Meja)
@@ -62,7 +64,19 @@ CREATE TABLE tools (
 
 
 
--- 4. Table room_bookings (Peminjaman Ruangan/Meja)
+-- 4. Table tool_locations
+CREATE TABLE tool_locations (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE
+);
+
+-- 5. Table tool_types
+CREATE TABLE tool_types (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE
+);
+
+-- 6. Table room_bookings (Peminjaman Ruangan/Meja)
 CREATE TABLE room_bookings (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
@@ -70,6 +84,8 @@ CREATE TABLE room_bookings (
     booking_date DATE NOT NULL,
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
+    project_name VARCHAR(255) NULL,
+    dosen_pembimbing VARCHAR(255) NULL,
     status ENUM('pending', 'approved', 'rejected', 'expired', 'no_show', 'cancelled') DEFAULT 'pending',
     rejection_reason TEXT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -82,13 +98,14 @@ CREATE TABLE room_bookings (
 CREATE INDEX idx_room_booking_overlap ON room_bookings (table_id, booking_date);
 
 
--- 5. Table tool_bookings (Peminjaman Alat)
+-- 7. Table tool_bookings (Peminjaman Alat)
 CREATE TABLE tool_bookings (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
     tool_id INT NOT NULL,
     quantity INT NOT NULL,
     booking_date DATE NOT NULL,
+    end_date DATE NULL,
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
     status ENUM('pending', 'approved', 'rejected', 'expired', 'completed', 'no_show', 'cancelled') DEFAULT 'pending',
@@ -101,3 +118,4 @@ CREATE TABLE tool_bookings (
 
 -- Add index for overlap checks
 CREATE INDEX idx_tool_booking_overlap ON tool_bookings (tool_id, booking_date);
+

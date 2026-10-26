@@ -10,6 +10,11 @@ $current_admin_id = (int)$_SESSION['user_id'];
 
 // Handle Actions (Add, Edit Role/Data, Delete)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!validateCsrfToken()) {
+        setFlashMessage('danger', 'Sesi keamanan tidak valid (CSRF token mismatch). Silakan muat ulang halaman.');
+        redirect('/admin/kelola_user.php');
+    }
+
     $action = $_POST['action'] ?? '';
 
     if ($action === 'add') {
@@ -315,6 +320,7 @@ require_once __DIR__ . '/../includes/header.php';
                                 </button>
                             <?php else: ?>
                                 <form method="POST" action="" class="d-inline" onsubmit="return confirm('Apakah Anda yakin ingin menghapus pengguna <?= htmlspecialchars(addslashes($u['name'])) ?>?');">
+                                    <?= csrfField() ?>
                                     <input type="hidden" name="action" value="delete">
                                     <input type="hidden" name="id" value="<?= $u['id'] ?>">
                                     <button type="submit" class="btn btn-sm btn-outline-danger" title="Hapus Pengguna">
@@ -328,6 +334,7 @@ require_once __DIR__ . '/../includes/header.php';
                                 <div class="modal-dialog text-start">
                                     <div class="modal-content">
                                         <form method="POST" action="">
+                                            <?= csrfField() ?>
                                             <div class="modal-header">
                                                 <h5 class="modal-title fw-bold">Edit Pengguna & Role</h5>
                                                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -408,6 +415,7 @@ require_once __DIR__ . '/../includes/header.php';
     <div class="modal-dialog">
         <div class="modal-content">
             <form method="POST" action="">
+                <?= csrfField() ?>
                 <div class="modal-header">
                     <h5 class="modal-title fw-bold">Tambah Pengguna Baru</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>

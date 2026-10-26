@@ -5,9 +5,13 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/functions.php';
+
+$logo_unika_v = file_exists(__DIR__ . '/../assets/images/logo_unika.png') ? filemtime(__DIR__ . '/../assets/images/logo_unika.png') : time();
+$logo_siega_v = file_exists(__DIR__ . '/../assets/images/logo_siega.png') ? filemtime(__DIR__ . '/../assets/images/logo_siega.png') : time();
 ?>
 <!DOCTYPE html>
 <html lang="id">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -17,73 +21,103 @@ require_once __DIR__ . '/functions.php';
     <!-- Google Fonts: Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- Custom CSS -->
-    <link href="<?= BASE_URL ?>/assets/css/style.css?v=<?= file_exists(__DIR__ . '/../assets/css/style.css') ? filemtime(__DIR__ . '/../assets/css/style.css') : time() ?>" rel="stylesheet">
+    <link
+        href="<?= BASE_URL ?>/assets/css/style.css?v=<?= file_exists(__DIR__ . '/../assets/css/style.css') ? filemtime(__DIR__ . '/../assets/css/style.css') : time() ?>"
+        rel="stylesheet">
 </head>
+
 <body>
 
-<nav class="navbar navbar-expand-lg navbar-dark mb-4" style="background-color: #0b5b9e; position: relative; z-index: 1040;">
-    <div class="container-fluid px-4">
-        <a class="navbar-brand d-flex align-items-center flex-wrap" href="<?= BASE_URL ?>/">
-            <!-- Mobile Logos -->
-            <img src="<?= BASE_URL ?>/assets/images/logo_unika.png" alt="Logo Unika" height="40" class="me-2 d-md-none">
-            <img src="<?= BASE_URL ?>/assets/images/logo_siega.png" alt="Logo Siega" height="40" class="me-2 d-md-none">
-            <!-- Desktop Logos -->
-            <img src="<?= BASE_URL ?>/assets/images/logo_unika.png" alt="Logo Unika" height="85" class="me-3 d-none d-md-inline">
-            <img src="<?= BASE_URL ?>/assets/images/logo_siega.png" alt="Logo Siega" height="85" class="me-3 d-none d-md-inline">
-            <span class="ms-1 ms-md-2 fw-semibold" style="font-size: clamp(1rem, 3vw, 1.25rem);">Lab Peminjaman</span>
-        </a>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="navbarNav">
-            <ul class="navbar-nav ms-auto">
-                <?php if (isset($_SESSION['user_id'])): ?>
-                    <?php if ($_SESSION['role'] === 'admin'): ?>
-                        <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/admin/dashboard.php">Dashboard</a></li>
-                        <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/admin/kelola_ruangan.php">Ruangan</a></li>
-                        <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/admin/kelola_alat.php">Alat</a></li>
-                        <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/admin/pengembalian_alat.php">Pengembalian</a></li>
-                        <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/admin/kelola_user.php">User</a></li>
-                    <?php else: ?>
-                        <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/user/dashboard.php">Dashboard</a></li>
-                        <li class="nav-item dropdown">
-                            <a class="nav-link text-white dropdown-toggle" href="#" id="pinjamDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                Form Peminjaman
+    <nav class="navbar navbar-expand-lg navbar-dark mb-4"
+        style="background-color: #0b5b9e; position: relative; z-index: 1040;">
+        <div class="container-fluid px-4">
+            <a class="navbar-brand d-flex align-items-center flex-wrap" href="<?= BASE_URL ?>/">
+                <!-- Mobile Logos -->
+                <img src="<?= BASE_URL ?>/assets/images/logo_unika.png?v=<?= $logo_unika_v ?>" alt="Logo Unika"
+                    height="40" class="me-2 d-md-none">
+                <img src="<?= BASE_URL ?>/assets/images/logo_siega.png?v=<?= $logo_siega_v ?>" alt="Logo Siega"
+                    height="40" class="me-2 d-md-none">
+                <!-- Desktop Logos -->
+                <img src="<?= BASE_URL ?>/assets/images/logo_unika.png?v=<?= $logo_unika_v ?>" alt="Logo Unika"
+                    height="85" class="me-3 d-none d-md-inline">
+                <img src="<?= BASE_URL ?>/assets/images/logo_siega.png?v=<?= $logo_siega_v ?>" alt="Logo Siega"
+                    height="40" class="me-3 d-none d-md-inline">
+                <span class="ms-1 ms-md-2 fw-semibold" style="font-size: clamp(1rem, 3vw, 1.25rem);">Lab
+                    Peminjaman</span>
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <?php if (isset($_SESSION['user_id'])): ?>
+                        <?php if ($_SESSION['role'] === 'admin'): ?>
+                            <li class="nav-item"><a class="nav-link text-white"
+                                    href="<?= BASE_URL ?>/admin/dashboard.php">Dashboard</a></li>
+                            <li class="nav-item"><a class="nav-link text-white"
+                                    href="<?= BASE_URL ?>/admin/kelola_ruangan.php">Ruangan</a></li>
+                            <li class="nav-item"><a class="nav-link text-white"
+                                    href="<?= BASE_URL ?>/admin/kelola_alat.php">Alat</a></li>
+                            <li class="nav-item"><a class="nav-link text-white"
+                                    href="<?= BASE_URL ?>/admin/pengembalian_alat.php">Pengembalian</a></li>
+                            <li class="nav-item"><a class="nav-link text-white"
+                                    href="<?= BASE_URL ?>/admin/kelola_user.php">User</a></li>
+                        <?php else: ?>
+                            <li class="nav-item"><a class="nav-link text-white"
+                                    href="<?= BASE_URL ?>/user/dashboard.php">Dashboard</a></li>
+                            <li class="nav-item dropdown">
+                                <a class="nav-link text-white dropdown-toggle" href="#" id="pinjamDropdown" role="button"
+                                    data-bs-toggle="dropdown" aria-expanded="false">
+                                    Form Peminjaman
+                                </a>
+                                <ul class="dropdown-menu" aria-labelledby="pinjamDropdown">
+                                    <li><a class="dropdown-item" href="<?= BASE_URL ?>/user/pinjam_ruangan.php">Pinjam Ruangan
+                                            (Lab)</a></li>
+                                    <li><a class="dropdown-item" href="<?= BASE_URL ?>/user/pinjam_alat.php">Pinjam Alat Lab</a>
+                                    </li>
+                                </ul>
+                            </li>
+                            <li class="nav-item"><a class="nav-link text-white"
+                                    href="<?= BASE_URL ?>/user/riwayat.php">Riwayat</a></li>
+                        <?php endif; ?>
+                        <li class="nav-item dropdown ms-lg-2">
+                            <a class="nav-link text-white dropdown-toggle d-flex align-items-center gap-2" href="#"
+                                id="userMenuDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <span
+                                    class="badge bg-light text-primary rounded-circle px-2 py-1 fw-bold"><?= strtoupper(substr($_SESSION['name'] ?? 'U', 0, 1)) ?></span>
+                                <span><?= htmlspecialchars($_SESSION['name']) ?></span>
                             </a>
-                            <ul class="dropdown-menu" aria-labelledby="pinjamDropdown">
-                                <li><a class="dropdown-item" href="<?= BASE_URL ?>/user/pinjam_ruangan.php">Pinjam Ruangan (Lab)</a></li>
-                                <li><a class="dropdown-item" href="<?= BASE_URL ?>/user/pinjam_alat.php">Pinjam Alat Lab</a></li>
+                            <ul class="dropdown-menu dropdown-menu-end shadow border-0" aria-labelledby="userMenuDropdown">
+                                <li>
+                                    <div class="px-3 py-2">
+                                        <div class="fw-bold text-dark text-truncate" style="max-width: 200px;">
+                                            <?= htmlspecialchars($_SESSION['name']) ?>
+                                        </div>
+                                        <span
+                                            class="badge <?= $_SESSION['role'] === 'admin' ? 'bg-warning text-dark' : 'bg-primary' ?> small">
+                                            <?= $_SESSION['role'] === 'admin' ? 'Administrator' : 'Mahasiswa' ?>
+                                        </span>
+                                    </div>
+                                </li>
+                                <li>
+                                    <hr class="dropdown-divider my-1">
+                                </li>
+                                <li><a class="dropdown-item py-2" href="<?= BASE_URL ?>/profile.php">Profil Saya</a></li>
+                                <li>
+                                    <hr class="dropdown-divider my-1">
+                                </li>
+                                <li><a class="dropdown-item text-danger py-2"
+                                        href="<?= BASE_URL ?>/auth/logout.php">Logout</a></li>
                             </ul>
                         </li>
-                        <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/user/riwayat.php">Riwayat</a></li>
+                    <?php else: ?>
+                        <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/auth/login.php">Login</a>
+                        </li>
                     <?php endif; ?>
-                    <li class="nav-item dropdown ms-lg-2">
-                        <a class="nav-link text-white dropdown-toggle d-flex align-items-center gap-2" href="#" id="userMenuDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            <span class="badge bg-light text-primary rounded-circle px-2 py-1 fw-bold"><?= strtoupper(substr($_SESSION['name'] ?? 'U', 0, 1)) ?></span>
-                            <span><?= htmlspecialchars($_SESSION['name']) ?></span>
-                        </a>
-                        <ul class="dropdown-menu dropdown-menu-end shadow border-0" aria-labelledby="userMenuDropdown">
-                            <li>
-                                <div class="px-3 py-2">
-                                    <div class="fw-bold text-dark text-truncate" style="max-width: 200px;"><?= htmlspecialchars($_SESSION['name']) ?></div>
-                                    <span class="badge <?= $_SESSION['role'] === 'admin' ? 'bg-warning text-dark' : 'bg-primary' ?> small">
-                                        <?= $_SESSION['role'] === 'admin' ? 'Administrator' : 'Mahasiswa' ?>
-                                    </span>
-                                </div>
-                            </li>
-                            <li><hr class="dropdown-divider my-1"></li>
-                            <li><a class="dropdown-item py-2" href="<?= BASE_URL ?>/profile.php">Profil Saya</a></li>
-                            <li><hr class="dropdown-divider my-1"></li>
-                            <li><a class="dropdown-item text-danger py-2" href="<?= BASE_URL ?>/auth/logout.php">Logout</a></li>
-                        </ul>
-                    </li>
-                <?php else: ?>
-                    <li class="nav-item"><a class="nav-link text-white" href="<?= BASE_URL ?>/auth/login.php">Login</a></li>
-                <?php endif; ?>
-            </ul>
+                </ul>
+            </div>
         </div>
-    </div>
-</nav>
+    </nav>
 
-<div class="container">
-    <?php displayFlashMessage(); ?>
+    <div class="container">
+        <?php displayFlashMessage(); ?>

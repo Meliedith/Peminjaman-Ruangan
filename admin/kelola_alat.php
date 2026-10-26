@@ -8,6 +8,11 @@ checkAuth('admin');
 
 // Handle Action
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!validateCsrfToken()) {
+        setFlashMessage('danger', 'Sesi keamanan tidak valid (CSRF token mismatch). Silakan muat ulang halaman.');
+        redirect('/admin/kelola_alat.php');
+    }
+
     $action = $_POST['action'] ?? '';
 
     try {
@@ -25,12 +30,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $processed = 0;
                 foreach ($group_items as $id) {
-                    $stmt_check = $pdo->prepare("SELECT status FROM tool_bookings WHERE id = ? FOR UPDATE");
+                    $stmt_check = $pdo->prepare("SELECT * FROM tool_bookings WHERE id = ? FOR UPDATE");
                     $stmt_check->execute([$id]);
                     $booking = $stmt_check->fetch();
                     
                     if ($booking && $booking['status'] === 'pending') {
                         if (in_array($id, $approved_items)) {
+                            // Validasi sisa kuota stok alat sebelum menyetujui
+                            $stmt_tool = $pdo->prepare("SELECT total_stock, name FROM tools WHERE id = ? AND deleted_at IS NULL");
+                            $stmt_tool->execute([$booking['tool_id']]);
+                            $tool = $stmt_tool->fetch();
+                            if (!$tool) {
+                                throw new Exception("Alat tidak ditemukan atau telah dihapus.");
+                            }
+                            $tool_end_date = !empty($booking['end_date']) ? $booking['end_date'] : $booking['booking_date'];
+
+                            $stmt_booked = $pdo->prepare("
+                                SELECT SUM(quantity) as booked_qty FROM tool_bookings 
+                                WHERE tool_id = ? 
+                                AND status = 'approved' 
+                                AND id != ?
+                                AND booking_date <= ? 
+                                AND IFNULL(end_date, booking_date) >= ?
+                                AND start_time < ? 
+                                AND end_time > ?
+                            ");
+                            $stmt_booked->execute([$booking['tool_id'], $id, $tool_end_date, $booking['booking_date'], $booking['end_time'], $booking['start_time']]);
+                            $booked_res = $stmt_booked->fetch();
+                            $currently_approved = (int)($booked_res['booked_qty'] ?? 0);
+                            $avail = (int)$tool['total_stock'] - $currently_approved;
+
+                            if ((int)$booking['quantity'] > $avail) {
+                                throw new Exception("Gagal menyetujui: Stok untuk '" . htmlspecialchars($tool['name']) . "' tidak mencukupi (Sisa tersedia: {$avail} unit).");
+                            }
+
                             $stmt = $pdo->prepare("UPDATE tool_bookings SET status = 'approved' WHERE id = ?");
                             $stmt->execute([$id]);
                         } else {
@@ -51,41 +84,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->commit();
     } catch (Exception $e) {
         $pdo->rollBack();
-        setFlashMessage('danger', 'Terjadi kesalahan sistem.');
+        setFlashMessage('danger', $e->getMessage() ?: 'Terjadi kesalahan sistem.');
     }
     
     redirect('/admin/kelola_alat.php');
 }
 
-// Fetch Pending Bookings
-$stmt = $pdo->query("
-    SELECT tb.*, u.name as user_name, u.phone as user_phone, u.email as user_email, t.name as tool_name 
+// Pagination configuration for Pending Bookings (1 transaksi pengajuan multi-barang = 1 entri)
+$pending_limit = 10;
+$pending_page = isset($_GET['pending_page']) ? max(1, (int)$_GET['pending_page']) : 1;
+$pending_offset = ($pending_page - 1) * $pending_limit;
+
+// Count distinct pending groups
+$stmt_pending_count = $pdo->query("
+    SELECT COUNT(DISTINCT tb.user_id, tb.booking_date, tb.start_time, tb.end_time, tb.created_at) 
+    FROM tool_bookings tb 
+    WHERE tb.status = 'pending'
+");
+$pending_total_records = (int)$stmt_pending_count->fetchColumn();
+$pending_total_pages = max(1, ceil($pending_total_records / $pending_limit));
+
+// Fetch pending groups for current page
+$stmt_pending_groups = $pdo->prepare("
+    SELECT tb.user_id, tb.booking_date, tb.end_date, tb.start_time, tb.end_time, tb.created_at,
+           u.name as user_name, u.phone as user_phone, u.email as user_email
     FROM tool_bookings tb 
     JOIN users u ON tb.user_id = u.id 
-    JOIN tools t ON tb.tool_id = t.id 
     WHERE tb.status = 'pending'
-    ORDER BY tb.booking_date ASC, tb.start_time ASC, tb.created_at ASC
+    GROUP BY tb.user_id, tb.booking_date, tb.end_date, tb.start_time, tb.end_time, tb.created_at, u.name, u.phone, u.email
+    ORDER BY tb.created_at DESC, tb.booking_date DESC, tb.start_time DESC
+    LIMIT $pending_limit OFFSET $pending_offset
 ");
-$pending_bookings = $stmt->fetchAll();
+$stmt_pending_groups->execute();
+$pending_page_groups = $stmt_pending_groups->fetchAll(PDO::FETCH_ASSOC);
 
 $grouped_pending = [];
-foreach ($pending_bookings as $b) {
-    // Generate a unique key for the request group
-    $key = $b['user_id'] . '_' . $b['booking_date'] . '_' . $b['start_time'] . '_' . $b['end_time'] . '_' . $b['created_at'];
-    if (!isset($grouped_pending[$key])) {
+if (!empty($pending_page_groups)) {
+    foreach ($pending_page_groups as $pg) {
+        $key = $pg['user_id'] . '_' . $pg['booking_date'] . '_' . $pg['start_time'] . '_' . $pg['end_time'] . '_' . $pg['created_at'];
         $grouped_pending[$key] = [
-            'user_name' => $b['user_name'],
-            'user_phone' => $b['user_phone'] ?? '',
-            'user_email' => $b['user_email'] ?? '',
-            'booking_date' => $b['booking_date'],
-            'end_date' => $b['end_date'],
-            'start_time' => $b['start_time'],
-            'end_time' => $b['end_time'],
-            'created_at' => $b['created_at'],
+            'user_name' => $pg['user_name'],
+            'user_phone' => $pg['user_phone'] ?? '',
+            'user_email' => $pg['user_email'] ?? '',
+            'booking_date' => $pg['booking_date'],
+            'end_date' => $pg['end_date'],
+            'start_time' => $pg['start_time'],
+            'end_time' => $pg['end_time'],
+            'created_at' => $pg['created_at'],
             'items' => []
         ];
     }
-    $grouped_pending[$key]['items'][] = $b;
+
+    $created_ats = array_unique(array_column($pending_page_groups, 'created_at'));
+    $placeholders = implode(',', array_fill(0, count($created_ats), '?'));
+    $stmt_items = $pdo->prepare("
+        SELECT tb.*, t.name as tool_name 
+        FROM tool_bookings tb 
+        JOIN tools t ON tb.tool_id = t.id 
+        WHERE tb.status = 'pending' AND tb.created_at IN ($placeholders)
+        ORDER BY tb.created_at ASC, t.name ASC
+    ");
+    $stmt_items->execute($created_ats);
+    $all_pending_items = $stmt_items->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($all_pending_items as $b) {
+        $key = $b['user_id'] . '_' . $b['booking_date'] . '_' . $b['start_time'] . '_' . $b['end_time'] . '_' . $b['created_at'];
+        if (isset($grouped_pending[$key])) {
+            $grouped_pending[$key]['items'][] = $b;
+        }
+    }
 }
 
 // Filter configuration for history
@@ -161,17 +228,17 @@ if (isset($_GET['export']) && $_GET['export'] === 'xlsx') {
         }
         $excelData[] = [
             $no++,
-            $r['user_name'],
-            $r['user_email'] ?? '-',
-            $r['user_phone'] ?? '-',
+            sanitizeExcelCell($r['user_name']),
+            sanitizeExcelCell($r['user_email'] ?? '-'),
+            sanitizeExcelCell($r['user_phone'] ?? '-'),
             date('d/m/Y H:i', strtotime($r['created_at'])),
             date('d/m/Y', strtotime($r['booking_date'])),
-            $end_date_str,
+            sanitizeExcelCell($end_date_str),
             $jam_str,
-            $r['tool_name'],
+            sanitizeExcelCell($r['tool_name']),
             (int)$r['quantity'],
             ucfirst($r['status']),
-            $r['rejection_reason'] ?: '-'
+            sanitizeExcelCell($r['rejection_reason'] ?: '-')
         ];
     }
     if (count($excelData) === 1) {
@@ -215,7 +282,15 @@ $stmt_history = $pdo->prepare("
 $stmt_history->execute($history_filter_params);
 $history_bookings = $stmt_history->fetchAll();
 
-$active_tab = (isset($_GET['tab']) && $_GET['tab'] === 'history') || isset($_GET['page']) || isset($_GET['filter_type']) ? 'history' : 'pending';
+if (isset($_GET['tab'])) {
+    $active_tab = $_GET['tab'] === 'history' ? 'history' : 'pending';
+} elseif (isset($_GET['page']) || isset($_GET['filter_type'])) {
+    $active_tab = 'history';
+} elseif (isset($_GET['pending_page'])) {
+    $active_tab = 'pending';
+} else {
+    $active_tab = 'pending';
+}
 
 require_once __DIR__ . '/../includes/header.php';
 ?>
@@ -224,10 +299,14 @@ require_once __DIR__ . '/../includes/header.php';
 
 <ul class="nav nav-tabs" id="myTab" role="tablist">
     <li class="nav-item" role="presentation">
-        <button class="nav-link <?= $active_tab === 'pending' ? 'active' : '' ?>" id="pending-tab" data-bs-toggle="tab" data-bs-target="#pending" type="button" role="tab">Menunggu Persetujuan</button>
+        <button class="nav-link <?= $active_tab === 'pending' ? 'active' : '' ?>" id="pending-tab" data-bs-toggle="tab" data-bs-target="#pending" type="button" role="tab">
+            Menunggu Persetujuan (<?= $pending_total_records ?>)
+        </button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link <?= $active_tab === 'history' ? 'active' : '' ?>" id="history-tab" data-bs-toggle="tab" data-bs-target="#history" type="button" role="tab">Histori Pengajuan</button>
+        <button class="nav-link <?= $active_tab === 'history' ? 'active' : '' ?>" id="history-tab" data-bs-toggle="tab" data-bs-target="#history" type="button" role="tab">
+            Histori Pengajuan (<?= $history_total_records ?>)
+        </button>
     </li>
 </ul>
 
@@ -240,7 +319,7 @@ require_once __DIR__ . '/../includes/header.php';
                     <tr>
                         <th>Pemohon</th>
                         <th>Waktu Pengajuan</th>
-                        <th>Tanggal Booking</th>
+                        <th>Tanggal Pinjam</th>
                         <th>Waktu</th>
                         <th>Total Barang</th>
                         <th>Aksi</th>
@@ -300,6 +379,7 @@ require_once __DIR__ . '/../includes/header.php';
                                       <div class="modal-dialog modal-lg">
                                         <div class="modal-content">
                                           <form method="POST" action="">
+                                              <?= csrfField() ?>
                                               <div class="modal-header">
                                                 <h5 class="modal-title">Review Pengajuan Alat</h5>
                                                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -328,7 +408,7 @@ require_once __DIR__ . '/../includes/header.php';
                                                         </div>
                                                         <div class="col-sm-6">
                                                             <strong>Waktu Pengajuan:</strong> <?= date('d M Y H:i', strtotime($group['created_at'])) ?> WIB<br>
-                                                            <strong>Tanggal Booking:</strong> <?= htmlspecialchars($group['booking_date']) ?>
+                                                            <strong>Tanggal Pinjam:</strong> <?= htmlspecialchars($group['booking_date']) ?>
                                                             <?php if (!empty($group['end_date']) && $group['end_date'] !== $group['booking_date']): ?>
                                                                 <?php 
                                                                     $d1 = new DateTime($group['booking_date']);
@@ -386,6 +466,21 @@ require_once __DIR__ . '/../includes/header.php';
                     <?php endif; ?>
                 </tbody>
             </table>
+
+            <!-- Pagination Menunggu Persetujuan -->
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
+                <?php 
+                    $start_record = ($pending_total_records > 0) ? $pending_offset + 1 : 0;
+                    $end_record = min($pending_offset + $pending_limit, $pending_total_records);
+                ?>
+                <div class="text-muted small">
+                    Menampilkan <?= $start_record ?> sampai <?= $end_record ?> dari <?= $pending_total_records ?> entri
+                </div>
+                
+                <?php if ($pending_total_pages > 1): ?>
+                    <?php renderPagination($pending_page, $pending_total_pages, ['tab' => 'pending'], 'pending_page'); ?>
+                <?php endif; ?>
+            </div>
         </div>
     </div>
 
@@ -458,7 +553,7 @@ require_once __DIR__ . '/../includes/header.php';
                 <thead class="table-light">
                     <tr>
                         <th>Pemohon</th>
-                        <th>Tanggal Booking</th>
+                        <th>Tanggal Pinjam</th>
                         <th>Alat</th>
                         <th>Jumlah</th>
                         <th>Waktu</th>
@@ -510,12 +605,20 @@ require_once __DIR__ . '/../includes/header.php';
                 </tbody>
             </table>
 
-            <?php if ($history_total_pages > 1): ?>
+            <!-- Pagination Histori -->
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
-                <span class="text-muted small">Menampilkan <?= count($history_bookings) > 0 ? $history_offset + 1 : 0 ?> sampai <?= $history_offset + count($history_bookings) ?> dari <?= $history_total_records ?> entri</span>
-                <?php renderPagination($history_page, $history_total_pages, ['tab' => 'history', 'filter_type' => $filter_type, 'date' => $selected_date, 'week' => $selected_week, 'month' => $selected_month]); ?>
+                <?php 
+                    $start_record = ($history_total_records > 0) ? $history_offset + 1 : 0;
+                    $end_record = min($history_offset + $limit, $history_total_records);
+                ?>
+                <div class="text-muted small">
+                    Menampilkan <?= $start_record ?> sampai <?= $end_record ?> dari <?= $history_total_records ?> entri
+                </div>
+                
+                <?php if ($history_total_pages > 1): ?>
+                    <?php renderPagination($history_page, $history_total_pages, ['tab' => 'history', 'filter_type' => $filter_type, 'date' => $selected_date, 'week' => $selected_week, 'month' => $selected_month]); ?>
+                <?php endif; ?>
             </div>
-            <?php endif; ?>
         </div>
     </div>
 </div>

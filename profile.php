@@ -14,6 +14,11 @@ $redirect_to = $_GET['redirect'] ?? '';
 
 // Handle Profile Update
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!validateCsrfToken()) {
+        setFlashMessage('danger', 'Sesi keamanan tidak valid (CSRF token mismatch). Silakan coba lagi.');
+        redirect('/profile.php' . (!empty($redirect_to) ? '?redirect=' . urlencode($redirect_to) : ''));
+    }
+
     $name = trim($_POST['name'] ?? '');
     $phone = trim($_POST['phone'] ?? '');
 
@@ -46,7 +51,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 redirect('/profile.php');
             }
         } catch (Exception $e) {
-            setFlashMessage('danger', 'Gagal memperbarui profil: ' . $e->getMessage());
+            error_log("Profile update error: " . $e->getMessage());
+            setFlashMessage('danger', 'Gagal memperbarui profil karena kesalahan sistem.');
         }
     }
 }
@@ -94,6 +100,7 @@ require_once __DIR__ . '/includes/header.php';
 
             <div class="card-body p-4">
                 <form method="POST" action="">
+                    <?= csrfField() ?>
                     
                     <div class="mb-3">
                         <label for="name" class="form-label fw-semibold text-secondary">Nama Lengkap <span class="text-danger">*</span></label>

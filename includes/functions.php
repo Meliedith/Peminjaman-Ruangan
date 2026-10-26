@@ -217,4 +217,58 @@ function getToolImageUrl($filename) {
     }
     return null;
 }
+
+/**
+ * Generate CSRF Token for current session
+ *
+ * @return string
+ */
+function generateCsrfToken() {
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
+}
+
+/**
+ * Render HTML input hidden for CSRF token
+ *
+ * @return string
+ */
+function csrfField() {
+    $token = htmlspecialchars(generateCsrfToken());
+    return '<input type="hidden" name="csrf_token" value="' . $token . '">';
+}
+
+/**
+ * Validate CSRF token from POST request
+ *
+ * @param string|null $token
+ * @return bool
+ */
+function validateCsrfToken($token = null) {
+    if ($token === null) {
+        $token = $_POST['csrf_token'] ?? '';
+    }
+    if (empty($_SESSION['csrf_token']) || empty($token)) {
+        return false;
+    }
+    return hash_equals($_SESSION['csrf_token'], $token);
+}
+
+/**
+ * Sanitize cell value to prevent Excel / CSV formula injection (CWE-1236)
+ *
+ * @param mixed $val
+ * @return mixed
+ */
+function sanitizeExcelCell($val) {
+    if (is_string($val) && strlen($val) > 0) {
+        $firstChar = $val[0];
+        if (in_array($firstChar, ['=', '+', '-', '@', "\t", "\r"])) {
+            return "'" . $val;
+        }
+    }
+    return $val;
+}
 ?>
